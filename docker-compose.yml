@@ -1,0 +1,60 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:3001
+      - DOCKER_ENV=true
+    depends_on:
+      - backend
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.js:/app/vite.config.js
+      - ./tailwind.config.js:/app/tailwind.config.js
+      - ./postcss.config.js:/app/postcss.config.js
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - JWT_SECRET=your-development-secret-key
+      - PORT=3001
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_NAME=location_tracker
+      - DB_USER=tracker_user
+      - DB_PASSWORD=tracker_password
+    volumes:
+      - ./backend:/app/backend
+    depends_on:
+      - database
+    restart: unless-stopped
+
+  database:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=location_tracker
+      - POSTGRES_USER=tracker_user
+      - POSTGRES_PASSWORD=tracker_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    driver: bridge
