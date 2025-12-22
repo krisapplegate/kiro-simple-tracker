@@ -33,12 +33,20 @@ afterAll(async () => {
 
 // Mock console methods in tests to reduce noise
 if (process.env.NODE_ENV === 'test') {
+  // Store original console methods
+  const originalConsole = { ...console }
+  
   global.console = {
     ...console,
     log: () => {},
     debug: () => {},
     info: () => {},
-    warn: console.warn,
-    error: console.error
+    warn: () => {}, // Also suppress warnings in tests
+    error: () => {}, // Suppress error logs from intentional test errors
+    // Keep these for actual test framework output
+    group: originalConsole.group,
+    groupEnd: originalConsole.groupEnd,
+    time: originalConsole.time,
+    timeEnd: originalConsole.timeEnd
   }
 }

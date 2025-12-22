@@ -10,6 +10,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.js'],
+    include: ['tests/unit/**/*.test.js'],
+    exclude: ['tests/integration/**/*.test.js', 'node_modules/**'],
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: [
