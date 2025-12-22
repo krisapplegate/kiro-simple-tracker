@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTenant } from '../contexts/TenantContext'
 import { 
   Filter, 
   Calendar, 
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 
 const Sidebar = ({ open, filters, setFilters }) => {
+  const { tenantId } = useTenant()
   const [expandedSections, setExpandedSections] = useState({
     timeRange: true,
     objectTypes: true,
@@ -36,7 +38,7 @@ const Sidebar = ({ open, filters, setFilters }) => {
 
   // Fetch existing object types
   const { data: existingTypes = [] } = useQuery({
-    queryKey: ['object-types'],
+    queryKey: ['object-types', tenantId],
     queryFn: async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/objects/types', {
@@ -46,7 +48,8 @@ const Sidebar = ({ open, filters, setFilters }) => {
       })
       if (!response.ok) return []
       return response.json()
-    }
+    },
+    enabled: !!tenantId
   })
 
   // Color mapping for object types
@@ -71,7 +74,7 @@ const Sidebar = ({ open, filters, setFilters }) => {
 
   // Fetch existing tags
   const { data: existingTags = [] } = useQuery({
-    queryKey: ['object-tags'],
+    queryKey: ['object-tags', tenantId],
     queryFn: async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/objects/tags', {
@@ -81,7 +84,8 @@ const Sidebar = ({ open, filters, setFilters }) => {
       })
       if (!response.ok) return []
       return response.json()
-    }
+    },
+    enabled: !!tenantId
   })
 
   // Use existing tags or fallback to default suggestions

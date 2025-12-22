@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
+import { useTenant } from '../contexts/TenantContext'
 import { X, MapPin, Tag, Plus, ChevronDown } from 'lucide-react'
 
 const CreateObjectModal = ({ isOpen, onClose, location }) => {
+  const { tenantId } = useTenant()
   const [formData, setFormData] = useState({
     name: '',
     type: '',
@@ -39,7 +41,7 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
 
   // Fetch existing object types
   const { data: existingTypes = [] } = useQuery({
-    queryKey: ['object-types'],
+    queryKey: ['object-types', tenantId],
     queryFn: async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/objects/types', {
@@ -50,12 +52,12 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
       if (!response.ok) return []
       return response.json()
     },
-    enabled: isOpen
+    enabled: isOpen && !!tenantId
   })
 
   // Fetch object type configurations
   const { data: typeConfigs = {} } = useQuery({
-    queryKey: ['object-type-configs'],
+    queryKey: ['object-type-configs', tenantId],
     queryFn: async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/object-type-configs', {
@@ -66,7 +68,7 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
       if (!response.ok) return {}
       return response.json()
     },
-    enabled: isOpen
+    enabled: isOpen && !!tenantId
   })
 
   // Default types that are always available
@@ -119,9 +121,9 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
     },
     onSuccess: () => {
       // Invalidate all related queries to refresh the UI
-      queryClient.invalidateQueries(['objects'])
-      queryClient.invalidateQueries(['object-types'])
-      queryClient.invalidateQueries(['object-tags'])
+      queryClient.invalidateQueries(['objects', tenantId])
+      queryClient.invalidateQueries(['object-types', tenantId])
+      queryClient.invalidateQueries(['object-tags', tenantId])
       onClose()
       resetForm()
     },
@@ -151,7 +153,7 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['object-type-configs'])
+      queryClient.invalidateQueries(['object-type-configs', tenantId])
     }
   })
 

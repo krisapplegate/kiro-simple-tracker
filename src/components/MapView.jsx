@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Locate, Edit, Trash2, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTenant } from '../contexts/TenantContext'
 
 // Fix for default markers in react-leaflet
 delete L.Icon.Default.prototype._getIconUrl
@@ -64,11 +65,12 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingObject, setEditingObject] = useState(null)
   const { user } = useAuth()
+  const { tenantId } = useTenant()
   const queryClient = useQueryClient()
 
   // Fetch object type configurations
   const { data: typeConfigs = {} } = useQuery({
-    queryKey: ['object-type-configs'],
+    queryKey: ['object-type-configs', tenantId],
     queryFn: async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/object-type-configs', {
@@ -78,7 +80,8 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
       })
       if (!response.ok) throw new Error('Failed to fetch object type configs')
       return response.json()
-    }
+    },
+    enabled: !!tenantId
   })
 
   // Helper function to get icon for object type
@@ -112,9 +115,9 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
     },
     onSuccess: () => {
       // Invalidate all related queries to refresh the UI
-      queryClient.invalidateQueries(['objects'])
-      queryClient.invalidateQueries(['object-types'])
-      queryClient.invalidateQueries(['object-tags'])
+      queryClient.invalidateQueries(['objects', tenantId])
+      queryClient.invalidateQueries(['object-types', tenantId])
+      queryClient.invalidateQueries(['object-tags', tenantId])
     },
     onError: (error) => {
       console.error('Delete error:', error)
@@ -149,7 +152,7 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
 
   // Fetch tracked objects
   const { data: objects = [], isLoading } = useQuery({
-    queryKey: ['objects', filters],
+    queryKey: ['objects', tenantId, filters],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (filters.timeRange) params.append('timeRange', filters.timeRange)
@@ -164,7 +167,8 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
       })
       if (!response.ok) throw new Error('Failed to fetch objects')
       return response.json()
-    }
+    },
+    enabled: !!tenantId
   })
 
   // Get user's current location
