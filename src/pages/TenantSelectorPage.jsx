@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Building2, Users, MapPin, Activity, ChevronRight } from 'lucide-react'
+import { Building2, Users, MapPin, Activity, ChevronRight, Plus } from 'lucide-react'
 
 const TenantSelectorPage = () => {
   const { user, logout } = useAuth()
@@ -9,6 +9,10 @@ const TenantSelectorPage = () => {
   const [tenants, setTenants] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newTenantName, setNewTenantName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
 
   useEffect(() => {
     fetchUserTenants()
@@ -44,6 +48,49 @@ const TenantSelectorPage = () => {
 
   const handleTenantSelect = (tenant) => {
     navigate(`/tenant/${tenant.id}/dashboard`)
+  }
+
+  const handleCreateTenant = async () => {
+    if (!newTenantName.trim()) {
+      setCreateError('Workspace name is required')
+      return
+    }
+
+    setCreating(true)
+    setCreateError('')
+
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/tenants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newTenantName.trim() })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to create workspace' }))
+        throw new Error(errorData.message)
+      }
+
+      const newTenant = await response.json()
+      
+      // Refresh the tenants list
+      await fetchUserTenants()
+      
+      // Close modal and navigate to new tenant
+      setShowCreateModal(false)
+      setNewTenantName('')
+      navigate(`/tenant/${newTenant.id}/dashboard`)
+      
+    } catch (error) {
+      console.error('Error creating tenant:', error)
+      setCreateError(error.message)
+    } finally {
+      setCreating(false)
+    }
   }
 
   if (loading) {
@@ -122,6 +169,23 @@ const TenantSelectorPage = () => {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {/* Create New Workspace Card */}
+            <div
+              onClick={() => setShowCreateModal(true)}
+              className="bg-white rounded-lg shadow-sm border-2 border-dashed border-gray-300 p-6 cursor-pointer hover:shadow-md hover:border-blue-400 transition-all duration-200 group flex flex-col items-center justify-center min-h-[200px]"
+            >
+              <div className="bg-blue-50 rounded-lg p-4 mb-4 group-hover:bg-blue-100 transition-colors">
+                <Plus className="h-8 w-8 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 mb-2">
+                Create New Workspace
+              </h3>
+              <p className="text-sm text-gray-500 text-center">
+                Set up a new workspace for your team or project
+              </p>
+            </div>
+
+            {/* Existing Workspaces */}
             {tenants.map((tenant) => (
               <div
                 key={tenant.id}
@@ -182,6 +246,71 @@ const TenantSelectorPage = () => {
           </div>
         )}
       </div>
+
+      {/* Create Workspace Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-gray-900">Create New Workspace</h3>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setNewTenantName('')
+                  setCreateError('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="workspaceName" className="block text-sm font-medium text-gray-700 mb-2">
+                Workspace Name
+              </label>
+              <input
+                type="text"
+                id="workspaceName"
+                value={newTenantName}
+                onChange={(e) => setNewTenantName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter workspace name..."
+                disabled={creating}
+              />
+            </div>
+
+            {createError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-600">{createError}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setNewTenantName('')
+                  setCreateError('')
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                disabled={creating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateTenant}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={creating || !newTenantName.trim()}
+              >
+                {creating ? 'Creating...' : 'Create Workspace'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

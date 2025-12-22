@@ -31,31 +31,29 @@ export class User {
   // New method: Get all tenants a user has access to
   static async getUserTenants(userId) {
     try {
-      // Get tenants where user has direct access or through roles
+      // First get the user's email from their ID
+      const userResult = await query('SELECT email FROM users WHERE id = $1', [userId])
+      if (userResult.rows.length === 0) {
+        return []
+      }
+      
+      const userEmail = userResult.rows[0].email
+      
+      // Get tenants where user has access by email (since users can have different IDs per tenant)
       const result = await query(
-        `SELECT DISTINCT t.id, t.name, t.created_at,
-                u.role as user_role,
-                COALESCE(
-                  json_agg(
-                    DISTINCT json_build_object(
-                      'id', r.id,
-                      'name', r.name,
-                      'display_name', r.display_name
-                    )
-                  ) FILTER (WHERE r.id IS NOT NULL), 
-                  '[]'
-                ) as roles
+        `SELECT DISTINCT t.id, t.name, t.created_at, u.role as user_role
          FROM tenants t
          JOIN users u ON t.id = u.tenant_id
-         LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.user_id = $1
-         LEFT JOIN roles r ON ur.role_id = r.id AND r.tenant_id = t.id
-         WHERE u.id = $1
-         GROUP BY t.id, t.name, t.created_at, u.role
+         WHERE u.email = $1
          ORDER BY t.name ASC`,
-        [userId]
+        [userEmail]
       )
       
-      return result.rows
+      // Add empty roles array for now
+      return result.rows.map(row => ({
+        ...row,
+        roles: []
+      }))
     } catch (error) {
       console.log('Error getting user tenants, falling back to simple query:', error.message)
       // Fallback: just get the user's primary tenant

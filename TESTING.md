@@ -8,9 +8,11 @@ This document provides comprehensive information about testing the Location Trac
 tests/
 ├── unit/                    # Unit tests
 │   ├── rbac.test.js        # RBAC service tests
+│   ├── rbac-service.test.js # RBAC service unit tests
 │   └── user.test.js        # User model tests
 ├── integration/            # Integration tests
 │   ├── rbac-api.test.js    # RBAC API tests
+│   ├── workspace-creation.test.js # Workspace creation tests
 │   └── rbac-ui.test.js     # RBAC UI tests (Playwright)
 ├── setup.js               # Global test setup
 ├── vitest.config.js       # Vitest configuration
@@ -67,6 +69,7 @@ The `./docker-start.sh` script provides convenient testing commands:
 ./docker-start.sh test-api     # API integration tests
 ./docker-start.sh test-ui      # UI tests with Playwright
 ./docker-start.sh test-rbac    # RBAC-specific tests
+./docker-start.sh test-workspace # Workspace creation tests
 
 # Cleanup test environment
 ./docker-start.sh test-cleanup
@@ -86,6 +89,7 @@ npm run test:unit          # Unit tests only
 npm run test:api           # API integration tests
 npm run test:ui            # UI tests with Playwright
 npm run test:rbac          # RBAC-specific tests
+npm run test:workspace     # Workspace creation tests
 ```
 
 ### Development Workflow
@@ -154,6 +158,32 @@ describe('createRole', () => {
 })
 ```
 
+#### RBAC Service Unit Tests (`tests/unit/rbac-service.test.js`)
+
+**Coverage:**
+- Tenant RBAC initialization
+- Default role creation
+- Permission assignment
+- Role-to-user assignment
+- Error handling
+
+**Key Test Cases:**
+```javascript
+// Tenant RBAC initialization
+describe('initializeTenantRBAC', () => {
+  it('should create default roles for new tenant')
+  it('should assign correct permissions to super_admin role')
+  it('should handle database errors gracefully')
+  it('should create roles with correct properties')
+})
+
+// Permission management
+describe('getUserPermissions', () => {
+  it('should return user permissions from roles and groups')
+  it('should return empty array on database error')
+})
+```
+
 #### User Model Tests (`tests/unit/user.test.js`)
 
 **Coverage:**
@@ -214,6 +244,44 @@ describe('Object Ownership', () => {
   it('should allow users to delete own objects')
   it('should prevent users from deleting others objects')
   it('should allow admin to delete any object')
+})
+```
+
+#### Workspace Creation Tests (`tests/integration/workspace-creation.test.js`)
+
+**Coverage:**
+- Workspace creation API
+- RBAC initialization for new workspaces
+- Multi-workspace user access
+- Workspace isolation
+- Error handling
+
+**Key Test Cases:**
+```javascript
+// Workspace creation
+describe('Workspace Creation', () => {
+  it('should create a new workspace with valid name')
+  it('should reject workspace creation without name')
+  it('should reject workspace creation without authentication')
+})
+
+// RBAC initialization
+describe('RBAC Initialization', () => {
+  it('should initialize default roles for new workspace')
+  it('should assign super_admin role to workspace creator')
+})
+
+// Multi-workspace access
+describe('Multi-Workspace Access', () => {
+  it('should list all workspaces user has access to')
+  it('should get specific workspace details')
+  it('should get user info for specific workspace')
+})
+
+// Workspace isolation
+describe('Workspace Isolation', () => {
+  it('should maintain separate data between workspaces')
+  it('should allow same user email in multiple workspaces')
 })
 ```
 
@@ -392,6 +460,45 @@ curl -X DELETE http://localhost:3001/api/objects/$OBJECT_ID \
 # Delete as owner (should succeed)
 curl -X DELETE http://localhost:3001/api/objects/$OBJECT_ID \
   -H "Authorization: Bearer $USER_TOKEN"
+```
+
+### 6. Workspace Management Testing
+
+```bash
+# Get user's workspaces
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3001/api/tenants | jq
+
+# Create new workspace
+WORKSPACE_ID=$(curl -s -X POST http://localhost:3001/api/tenants \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test Workspace"}' | jq -r '.id')
+
+# Get workspace details
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3001/api/tenants/$WORKSPACE_ID | jq
+
+# Get user info for workspace
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3001/api/tenants/$WORKSPACE_ID/user | jq
+
+# Verify RBAC initialization
+echo "Checking roles created for workspace $WORKSPACE_ID:"
+docker exec -it simple-tracker-database-1 psql -U tracker_user -d location_tracker \
+  -c "SELECT name, display_name FROM roles WHERE tenant_id = $WORKSPACE_ID;"
+
+# Verify user has super_admin role
+echo "Checking user roles in workspace $WORKSPACE_ID:"
+docker exec -it simple-tracker-database-1 psql -U tracker_user -d location_tracker \
+  -c "SELECT u.email, r.name as role FROM users u 
+      JOIN user_roles ur ON u.id = ur.user_id 
+      JOIN roles r ON ur.role_id = r.id 
+      WHERE u.tenant_id = $WORKSPACE_ID;"
 ```
 
 ## UI Testing with Playwright

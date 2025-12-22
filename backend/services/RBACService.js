@@ -398,4 +398,113 @@ export class RBACService {
       throw error
     }
   }
+
+  /**
+   * Initialize RBAC system for a new tenant
+   * Creates default roles and assigns permissions
+   */
+  static async initializeTenantRBAC(tenantId) {
+    try {
+      console.log(`Initializing RBAC for tenant ${tenantId}`)
+      
+      // Create default roles for the new tenant
+      const defaultRoles = [
+        {
+          name: 'super_admin',
+          displayName: 'Super Administrator',
+          description: 'Full system access with all permissions',
+          isSystemRole: true
+        },
+        {
+          name: 'admin',
+          displayName: 'Administrator',
+          description: 'Administrative access with user and object management',
+          isSystemRole: true
+        },
+        {
+          name: 'manager',
+          displayName: 'Manager',
+          description: 'Management access with team and object oversight',
+          isSystemRole: true
+        },
+        {
+          name: 'operator',
+          displayName: 'Operator',
+          description: 'Operational access for object management',
+          isSystemRole: true
+        },
+        {
+          name: 'viewer',
+          displayName: 'Viewer',
+          description: 'Read-only access to objects and data',
+          isSystemRole: true
+        },
+        {
+          name: 'user',
+          displayName: 'Standard User',
+          description: 'Basic user access for own objects',
+          isSystemRole: true
+        }
+      ]
+
+      const createdRoles = {}
+
+      // Create each role
+      for (const roleData of defaultRoles) {
+        const result = await query(`
+          INSERT INTO roles (name, display_name, description, tenant_id, is_system_role)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING *
+        `, [roleData.name, roleData.displayName, roleData.description, tenantId, roleData.isSystemRole])
+        
+        createdRoles[roleData.name] = result.rows[0]
+        console.log(`Created role: ${roleData.name} for tenant ${tenantId}`)
+      }
+
+      // Get all permissions
+      const permissionsResult = await query('SELECT * FROM permissions')
+      const permissions = permissionsResult.rows
+
+      // Assign permissions to roles
+      const rolePermissions = {
+        super_admin: permissions, // All permissions
+        admin: permissions.filter(p => p.name !== 'system.admin'), // All except system admin
+        manager: permissions.filter(p => 
+          ['objects', 'users', 'groups', 'types'].includes(p.resource) && 
+          ['create', 'read', 'update', 'delete'].includes(p.action)
+        ),
+        operator: permissions.filter(p => 
+          ['objects', 'types', 'icons'].includes(p.resource) && 
+          ['create', 'read', 'update', 'delete'].includes(p.action)
+        ),
+        viewer: permissions.filter(p => p.action === 'read'),
+        user: permissions.filter(p => 
+          ['objects.create', 'objects.read', 'objects.update', 'objects.delete', 'types.read', 'icons.read'].includes(p.name)
+        )
+      }
+
+      // Insert role permissions
+      for (const [roleName, rolePerms] of Object.entries(rolePermissions)) {
+        const role = createdRoles[roleName]
+        if (role && rolePerms.length > 0) {
+          const values = rolePerms.map((_, index) => `($1, $${index + 2})`).join(', ')
+          const params = [role.id, ...rolePerms.map(p => p.id)]
+          
+          await query(`
+            INSERT INTO role_permissions (role_id, permission_id)
+            VALUES ${values}
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+          `, params)
+          
+          console.log(`Assigned ${rolePerms.length} permissions to ${roleName} for tenant ${tenantId}`)
+        }
+      }
+
+      console.log(`RBAC initialization completed for tenant ${tenantId}`)
+      return createdRoles
+    } catch (error) {
+      console.error('Error initializing tenant RBAC:', error)
+      throw error
+    }
+  }
 }

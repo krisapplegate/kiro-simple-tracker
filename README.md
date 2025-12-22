@@ -6,6 +6,7 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 
 - **Real-time Location Tracking**: Track objects with live position updates
 - **Multi-tenant Architecture**: Isolated data per tenant with role-based access control
+- **Workspace Management**: Create and manage multiple workspaces with automatic RBAC initialization
 - **Role-Based Access Control (RBAC)**: Comprehensive permission system with 6 roles and 32 granular permissions
 - **RBAC Management Interface**: Complete frontend for managing users, roles, groups, and permissions
 - **Interactive Map Interface**: Leaflet-based map with custom emoji markers and enhanced tooltips
@@ -191,6 +192,12 @@ See [TESTING.md](TESTING.md) for comprehensive testing documentation.
 - `POST /api/auth/login` - User login
 - `GET /api/auth/validate` - Validate JWT token
 
+### Tenant Management
+- `GET /api/tenants` - Get all tenants user has access to
+- `POST /api/tenants` - Create new workspace with automatic RBAC initialization
+- `GET /api/tenants/:tenantId` - Get specific tenant information
+- `GET /api/tenants/:tenantId/user` - Get user info for specific tenant
+
 ### Objects
 - `GET /api/objects` - Get tracked objects (requires `objects.read` permission)
 - `POST /api/objects` - Create new tracked object (requires `objects.create` permission)
@@ -343,6 +350,8 @@ npm run build
 - [x] PostgreSQL database integration with connection pooling
 - [x] Docker containerization for development and production
 - [x] Multi-tenant architecture with role-based permissions
+- [x] Workspace creation with automatic RBAC initialization
+- [x] Multi-tenant user access and workspace switching
 - [x] Comprehensive RBAC system with 6 roles and 32 permissions
 - [x] Real-time WebSocket updates for live synchronization
 - [x] Location history tracking and visualization

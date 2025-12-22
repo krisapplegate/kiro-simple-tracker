@@ -212,8 +212,8 @@ app.get('/api/tenants/:tenantId/user', authenticateToken, async (req, res) => {
   }
 })
 
-// Create new tenant (admin only)
-app.post('/api/tenants', authenticateToken, requirePermission('tenants.create'), async (req, res) => {
+// Create new tenant - allow any authenticated user to create their own workspace
+app.post('/api/tenants', authenticateToken, async (req, res) => {
   try {
     const { name } = req.body
     
@@ -221,7 +221,52 @@ app.post('/api/tenants', authenticateToken, requirePermission('tenants.create'),
       return res.status(400).json({ message: 'Tenant name is required' })
     }
     
+    // Create the new tenant
     const tenant = await Tenant.create({ name })
+    
+    // Initialize RBAC system for the new tenant
+    const roles = await RBACService.initializeTenantRBAC(tenant.id)
+    
+    // Create a user record for the creator in the new tenant with admin role
+    const newUserData = {
+      email: req.user.email,
+      password: 'placeholder', // This won't be used since user already exists
+      role: 'admin',
+      tenantId: tenant.id
+    }
+    
+    // Check if user already exists in this tenant (shouldn't happen, but safety check)
+    const existingUser = await query(
+      'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+      [req.user.email, tenant.id]
+    )
+    
+    if (existingUser.rows.length === 0) {
+      // Create user record in new tenant
+      await query(
+        `INSERT INTO users (email, password_hash, role, tenant_id) 
+         SELECT $1, password_hash, $2, $3 FROM users WHERE id = $4`,
+        [req.user.email, 'admin', tenant.id, req.user.id]
+      )
+      
+      // Assign super_admin role to the creator in the new tenant
+      if (roles.super_admin) {
+        const newUser = await query(
+          'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+          [req.user.email, tenant.id]
+        )
+        
+        if (newUser.rows.length > 0) {
+          await RBACService.assignRoleToUser(
+            newUser.rows[0].id, 
+            roles.super_admin.id, 
+            newUser.rows[0].id
+          )
+          console.log(`Assigned super_admin role to user ${req.user.email} in tenant ${tenant.id}`)
+        }
+      }
+    }
+    
     res.status(201).json(tenant)
   } catch (error) {
     console.error('Create tenant error:', error)
