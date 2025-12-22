@@ -30,7 +30,7 @@ describe('RBAC API Simple Tests', () => {
       .get('/api/health')
       .expect(200)
     
-    expect(response.body.status).toBe('healthy')
+    expect(response.body.status).toBe('OK')
   })
 
   it('should login with admin credentials', async () => {
