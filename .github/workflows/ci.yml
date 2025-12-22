@@ -56,6 +56,7 @@ jobs:
     - name: Setup test database
       run: |
         PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/init.sql
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/migrate_add_rbac.sql
       env:
         PGPASSWORD: tracker_password
     
