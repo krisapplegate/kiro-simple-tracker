@@ -34,9 +34,12 @@ cd location-tracker
 - Backend API: http://localhost:3001
 - Database: PostgreSQL on port 5432
 
-4. **Login with demo credentials:**
+4. **Login and explore features:**
 - Email: `admin@demo.com`
 - Password: `password`
+- Click on the map to create objects
+- Use enhanced map tooltips for quick actions
+- Try the sidebar filters and ObjectDrawer
 
 That's it! The application is now running with a PostgreSQL database.
 
@@ -249,6 +252,27 @@ docker-compose logs frontend
 
 # Rebuild frontend
 docker-compose up --build frontend
+```
+
+#### Map Tooltips Not Working
+```bash
+# Check browser console for JavaScript errors
+# Verify objects exist on map
+node database/manage.js listObjects
+
+# Check WebSocket connection
+# Look for "WebSocket connected" in browser console
+```
+
+#### Object Actions Not Working
+```bash
+# Check user permissions
+node database/manage.js listUsers
+
+# Verify object ownership
+# Only creators and admins can delete objects
+
+# Check browser console for API errors
 ```
 
 #### Authentication Issues

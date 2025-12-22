@@ -62,15 +62,17 @@ NODE_ENV=production
 ## Container Details
 
 ### Frontend Container
-- **Development**: Vite dev server with hot reload
-- **Production**: Nginx serving built static files
+- **Development**: Vite dev server with hot reload and React Fast Refresh
+- **Production**: Nginx serving built static files with optimized assets
 - **Port**: 3000 (dev) / 80 (prod)
+- **Features**: Enhanced map tooltips, real-time updates, responsive design
 
 ### Backend Container
-- **Development**: Nodemon with auto-restart
-- **Production**: Node.js production server
+- **Development**: Nodemon with auto-restart on file changes
+- **Production**: Node.js production server with PM2 process management
 - **Port**: 3001
-- **Database**: PostgreSQL connection
+- **Database**: PostgreSQL connection with connection pooling
+- **Features**: JWT authentication, WebSocket support, permission-based APIs
 
 ### Database Container
 - **Image**: PostgreSQL 15 Alpine
@@ -174,6 +176,22 @@ docker-compose restart backend
 
 # Rebuild containers
 docker-compose up --build
+```
+
+### Application Issues
+```bash
+# Test API endpoints
+curl http://localhost:3001/api/health
+curl http://localhost:3001/api/objects
+
+# Check WebSocket connection
+# Look for "WebSocket connected" in browser console
+
+# Test object creation
+# Click on map or use + button
+
+# Check permissions
+node database/manage.js listUsers
 ```
 
 ### Permission Issues

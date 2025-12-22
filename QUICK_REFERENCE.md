@@ -77,9 +77,10 @@ npm run build
 ### Objects
 - `GET /api/objects` - List objects (with filters)
 - `POST /api/objects` - Create object
+- `PUT /api/objects/:id` - Update object (owner/admin only)
 - `DELETE /api/objects/:id` - Delete object (owner/admin only)
-- `GET /api/objects/types` - Get existing object types
-- `GET /api/objects/tags` - Get existing tags
+- `GET /api/objects/types` - Get existing object types with usage counts
+- `GET /api/objects/tags` - Get existing tags with usage counts
 - `GET /api/objects/:id/locations` - Location history
 
 ### Health
@@ -171,13 +172,18 @@ VITE_API_URL=http://localhost:3001
 
 ## 📱 Usage
 
-1. **Login** with demo credentials
-2. **Click map** to create objects
-3. **Choose from existing types** or create custom types
-4. **Use sidebar** to filter objects
-5. **Click objects** to view/delete details
-6. **Delete objects** you created (admins can delete any)
-7. **Real-time updates** via WebSocket
+1. **Login** with demo credentials (`admin@demo.com` / `password`)
+2. **Click map** to create objects at specific locations
+3. **Choose from existing types** or create custom types with usage counts
+4. **Use sidebar** to filter objects by type, tags, or time range
+5. **Click objects on map** to see enhanced tooltips with:
+   - Color-coded status badges (active/warning/critical)
+   - Object details (type, description, tags, last updated)
+   - Action buttons (View Details, Edit, Delete)
+6. **Use ObjectDrawer** for detailed view and management
+7. **Delete objects** you created (admins can delete any object)
+8. **Real-time updates** via WebSocket for live synchronization
+9. **Edit objects** directly from map tooltips or ObjectDrawer
 
 ## 🆘 Common Issues
 
@@ -186,9 +192,12 @@ VITE_API_URL=http://localhost:3001
 | Port in use | `./docker-start.sh stop` |
 | Database error | `./docker-start.sh health` |
 | "created_by column does not exist" | `./docker-start.sh migrate` |
-| Can't create objects | Check browser console |
-| Authentication failed | Clear localStorage |
-| Map not loading | Check internet connection |
+| Can't create objects | Check browser console, try map click or + button |
+| Authentication failed | Clear localStorage and re-login |
+| Map not loading | Check internet connection for tiles |
+| ObjectDrawer not visible | Check for z-index issues, should appear on right |
+| Edit/Delete buttons missing | Only owners/admins see delete, check permissions |
+| Map tooltips not working | Click objects on map to see enhanced popups |
 
 ## 📞 Support
 

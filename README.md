@@ -6,10 +6,13 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 
 - **Real-time Location Tracking**: Track objects with live position updates
 - **Multi-tenant Architecture**: Isolated data per tenant with role-based access
-- **Interactive Map Interface**: Leaflet-based map with custom markers and clustering
+- **Interactive Map Interface**: Leaflet-based map with custom markers and enhanced tooltips
+- **Enhanced Map Tooltips**: Status display, object details, and action buttons directly on map popups
 - **Filtering & Search**: Filter by object type, time range, tags, and proximity
-- **Object Management**: Create, edit, and delete tracked objects
+- **Object Management**: Create, edit, and delete tracked objects with permission-based access
+- **Dynamic Object Types**: Choose from existing types or create custom types with usage statistics
 - **Location History**: View historical movement data for each object
+- **Permission-Based Actions**: Role-based delete permissions (admin or object creator)
 - **Responsive Design**: Works on desktop, tablet, and mobile devices
 - **Real-time Updates**: WebSocket integration for live data synchronization
 
@@ -99,27 +102,33 @@ npm run dev
 ```
 ├── src/                    # Frontend React application
 │   ├── components/         # React components
-│   │   ├── MapView.jsx    # Main map interface
-│   │   ├── Sidebar.jsx    # Filters and controls
-│   │   ├── ObjectDrawer.jsx # Object details panel
-│   │   └── ...
+│   │   ├── MapView.jsx    # Main map interface with enhanced tooltips
+│   │   ├── Sidebar.jsx    # Filters and controls with real-time updates
+│   │   ├── ObjectDrawer.jsx # Object details panel with edit/delete actions
+│   │   ├── CreateObjectModal.jsx # Object creation with dynamic type selection
+│   │   ├── Navbar.jsx     # Navigation and user menu
+│   │   └── ProtectedRoute.jsx # Authentication wrapper
 │   ├── contexts/          # React contexts
-│   │   ├── AuthContext.jsx # Authentication state
-│   │   └── TenantContext.jsx # Multi-tenant state
+│   │   ├── AuthContext.jsx # Authentication state management
+│   │   └── TenantContext.jsx # Multi-tenant state management
 │   ├── pages/             # Page components
 │   │   ├── LoginPage.jsx  # Authentication page
-│   │   └── DashboardPage.jsx # Main dashboard
+│   │   └── DashboardPage.jsx # Main dashboard with map and sidebar
+│   ├── hooks/             # Custom React hooks
+│   │   └── useWebSocket.js # WebSocket connection management
 │   └── ...
 ├── backend/               # Backend Node.js application
-│   ├── server.js         # Express server with API routes
+│   ├── server.js         # Express server with API routes and WebSocket
 │   ├── database.js       # PostgreSQL connection and query helpers
 │   └── models/           # Database models
-│       ├── User.js       # User authentication model
-│       ├── TrackedObject.js # Object tracking model
-│       └── LocationHistory.js # Location history model
+│       ├── User.js       # User authentication and management
+│       ├── TrackedObject.js # Object tracking with ownership
+│       └── LocationHistory.js # Location history tracking
 ├── database/             # Database setup and management
 │   ├── init.sql         # Database schema and initial data
-│   └── manage.js        # Database management CLI
+│   ├── manage.js        # Database management CLI
+│   ├── migrate_add_created_by.sql # Migration for object ownership
+│   └── scripts/         # Database migration scripts
 ├── docker-compose.yml    # Development Docker setup
 ├── docker-compose.prod.yml # Production Docker setup
 ├── docker-start.sh      # Docker management script
@@ -136,6 +145,7 @@ npm run dev
 ### Objects
 - `GET /api/objects` - Get tracked objects (with filtering)
 - `POST /api/objects` - Create new tracked object
+- `PUT /api/objects/:id` - Update object (owner or admin only)
 - `DELETE /api/objects/:id` - Delete object (owner or admin only)
 - `GET /api/objects/types` - Get existing object types with usage counts
 - `GET /api/objects/tags` - Get existing tags with usage counts
@@ -261,15 +271,21 @@ npm run build
 ## Features Roadmap
 
 ### Completed ✅
-- [x] PostgreSQL database integration
-- [x] Docker containerization
-- [x] Multi-tenant architecture
-- [x] Real-time WebSocket updates
-- [x] Location history tracking
+- [x] PostgreSQL database integration with connection pooling
+- [x] Docker containerization for development and production
+- [x] Multi-tenant architecture with role-based permissions
+- [x] Real-time WebSocket updates for live synchronization
+- [x] Location history tracking and visualization
+- [x] Object ownership and permission-based deletion
+- [x] Dynamic object type selection with usage statistics
+- [x] Enhanced map tooltips with status and action buttons
+- [x] Comprehensive object management (create, edit, delete)
+- [x] Real-time sidebar updates and filtering
 
 ### In Progress 🚧
+- [ ] Complete edit functionality with backend API integration
 - [ ] Advanced filtering (geofencing, custom date ranges)
-- [ ] Bulk object import/export
+- [ ] Bulk object import/export functionality
 - [ ] Advanced analytics and reporting
 
 ### Planned 📋
@@ -290,6 +306,12 @@ npm run build
 4. Verify you're logged in (token in localStorage)
 5. Try clicking the map or the floating + button
 6. Check network tab for failed API requests
+
+### Object Actions Not Working
+1. **Can't see delete button**: Only admins and object creators can delete objects
+2. **Edit button not working**: Edit modal should open - check browser console for errors
+3. **Map tooltip actions**: Click Edit/Delete buttons in map popups for quick actions
+4. **ObjectDrawer not visible**: Check z-index issues - drawer should appear on right side
 
 ### Database Issues
 - **Connection errors**: Check if database container is running
