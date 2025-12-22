@@ -8,7 +8,19 @@
     "dev:frontend": "vite",
     "dev:backend": "nodemon backend/server.js",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config tests/vitest.config.js",
+    "test:unit:watch": "vitest --config tests/vitest.config.js",
+    "test:unit:coverage": "vitest run --coverage --config tests/vitest.config.js",
+    "test:integration": "npm run test:api && npm run test:ui",
+    "test:api": "vitest run tests/integration/rbac-api.test.js --config tests/vitest.config.js",
+    "test:ui": "playwright test --config tests/playwright.config.js",
+    "test:ui:headed": "playwright test --headed --config tests/playwright.config.js",
+    "test:ui:debug": "playwright test --debug --config tests/playwright.config.js",
+    "test:rbac": "npm run test:unit tests/unit/rbac.test.js && npm run test:api",
+    "test:setup": "./docker-start.sh dev && sleep 10",
+    "test:cleanup": "./docker-start.sh stop"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -35,6 +47,11 @@
     "autoprefixer": "^10.4.13",
     "postcss": "^8.4.21",
     "concurrently": "^7.6.0",
-    "nodemon": "^2.0.20"
+    "nodemon": "^2.0.20",
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "@playwright/test": "^1.40.0",
+    "supertest": "^6.3.3",
+    "jest": "^29.7.0"
   }
 }

@@ -13,7 +13,7 @@ fi
 
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 [dev|prod|stop|logs|clean|db|health|backup|restore|migrate]"
+    echo "Usage: $0 [dev|prod|stop|logs|clean|db|health|backup|restore|migrate|test|test-unit|test-api|test-ui|test-setup|test-cleanup]"
     echo ""
     echo "Main Commands:"
     echo "  dev     - Start development environment (default)"
@@ -28,6 +28,15 @@ show_usage() {
     echo "  health  - Check application health"
     echo "  backup  - Backup database to file"
     echo "  restore - Restore database from backup"
+    echo ""
+    echo "Testing Commands:"
+    echo "  test         - Run all tests (unit + integration + UI)"
+    echo "  test-unit    - Run unit tests only"
+    echo "  test-api     - Run API integration tests only"
+    echo "  test-ui      - Run UI tests with Playwright"
+    echo "  test-rbac    - Run RBAC-specific tests"
+    echo "  test-setup   - Setup test environment"
+    echo "  test-cleanup - Cleanup test data and containers"
     echo ""
 }
 
@@ -178,6 +187,312 @@ case $MODE in
                 exit 1
             fi
         fi
+        ;;
+    "test")
+        echo "🧪 Running all tests..."
+        echo "================================"
+        
+        # Ensure application is running
+        if ! curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+            echo "🚀 Starting test environment..."
+            $0 dev
+            echo "⏳ Waiting for services to be ready..."
+            sleep 15
+            
+            # Wait for backend to be ready
+            timeout 60 bash -c 'until curl -f http://localhost:3001/api/health; do sleep 2; done' || {
+                echo "❌ Backend failed to start"
+                exit 1
+            }
+            
+            # Wait for frontend to be ready
+            timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done' || {
+                echo "❌ Frontend failed to start"
+                exit 1
+            }
+        fi
+        
+        echo "✅ Test environment ready"
+        echo ""
+        
+        # Run tests in order
+        echo "1️⃣ Running unit tests..."
+        npm run test:unit || {
+            echo "❌ Unit tests failed"
+            exit 1
+        }
+        
+        echo ""
+        echo "2️⃣ Running API integration tests..."
+        npm run test:api || {
+            echo "❌ API tests failed"
+            exit 1
+        }
+        
+        echo ""
+        echo "3️⃣ Running UI tests..."
+        if command -v npx > /dev/null 2>&1; then
+            if [ ! -d "node_modules/@playwright" ]; then
+                echo "📦 Installing Playwright browsers..."
+                npx playwright install
+            fi
+            npm run test:ui || {
+                echo "❌ UI tests failed"
+                exit 1
+            }
+        else
+            echo "⚠️  Playwright not available, skipping UI tests"
+        fi
+        
+        echo ""
+        echo "🎉 All tests passed successfully!"
+        ;;
+    "test-unit")
+        echo "🧪 Running unit tests..."
+        echo "========================"
+        
+        if [ ! -f "package.json" ]; then
+            echo "❌ package.json not found. Run from project root."
+            exit 1
+        fi
+        
+        # Install dependencies if needed
+        if [ ! -d "node_modules" ]; then
+            echo "📦 Installing dependencies..."
+            npm install
+        fi
+        
+        # Run unit tests with coverage
+        npm run test:unit:coverage || {
+            echo "❌ Unit tests failed"
+            exit 1
+        }
+        
+        echo "✅ Unit tests completed successfully"
+        echo "📊 Coverage report available in coverage/ directory"
+        ;;
+    "test-api")
+        echo "🌐 Running API integration tests..."
+        echo "==================================="
+        
+        # Ensure backend is running
+        if ! curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+            echo "🚀 Starting backend for API tests..."
+            $0 dev
+            echo "⏳ Waiting for backend to be ready..."
+            timeout 60 bash -c 'until curl -f http://localhost:3001/api/health; do sleep 2; done' || {
+                echo "❌ Backend failed to start"
+                exit 1
+            }
+        fi
+        
+        echo "✅ Backend is ready"
+        
+        # Run API tests
+        npm run test:api || {
+            echo "❌ API tests failed"
+            exit 1
+        }
+        
+        echo "✅ API tests completed successfully"
+        ;;
+    "test-ui")
+        echo "🖥️  Running UI tests with Playwright..."
+        echo "======================================"
+        
+        # Ensure full application is running
+        if ! curl -s http://localhost:3000 > /dev/null 2>&1 || ! curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+            echo "🚀 Starting full application for UI tests..."
+            $0 dev
+            echo "⏳ Waiting for services to be ready..."
+            sleep 15
+            
+            timeout 60 bash -c 'until curl -f http://localhost:3001/api/health; do sleep 2; done' || {
+                echo "❌ Backend failed to start"
+                exit 1
+            }
+            
+            timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done' || {
+                echo "❌ Frontend failed to start"
+                exit 1
+            }
+        fi
+        
+        echo "✅ Application is ready"
+        
+        # Install Playwright if needed
+        if [ ! -d "node_modules/@playwright" ]; then
+            echo "📦 Installing Playwright browsers..."
+            npx playwright install
+        fi
+        
+        # Run UI tests
+        npm run test:ui || {
+            echo "❌ UI tests failed"
+            exit 1
+        }
+        
+        echo "✅ UI tests completed successfully"
+        echo "📊 Test report available in playwright-report/ directory"
+        ;;
+    "test-rbac")
+        echo "🔐 Running RBAC-specific tests..."
+        echo "================================="
+        
+        # Ensure application is running
+        if ! curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+            echo "🚀 Starting application for RBAC tests..."
+            $0 dev
+            echo "⏳ Waiting for backend to be ready..."
+            timeout 60 bash -c 'until curl -f http://localhost:3001/api/health; do sleep 2; done' || {
+                echo "❌ Backend failed to start"
+                exit 1
+            }
+        fi
+        
+        echo "✅ Backend is ready"
+        
+        # Run RBAC unit tests
+        echo "1️⃣ Running RBAC unit tests..."
+        npm run test:unit tests/unit/rbac.test.js || {
+            echo "❌ RBAC unit tests failed"
+            exit 1
+        }
+        
+        # Run RBAC API tests
+        echo ""
+        echo "2️⃣ Running RBAC API tests..."
+        npm run test:api || {
+            echo "❌ RBAC API tests failed"
+            exit 1
+        }
+        
+        # Validate RBAC system integrity
+        echo ""
+        echo "3️⃣ Validating RBAC system integrity..."
+        
+        # Test admin login
+        TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token' 2>/dev/null)
+        
+        if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
+            echo "❌ Failed to authenticate admin user"
+            exit 1
+        fi
+        
+        # Verify admin has all permissions
+        PERM_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" \
+          http://localhost:3001/api/auth/validate | jq '.permissions | length' 2>/dev/null)
+        
+        if [ "$PERM_COUNT" != "32" ]; then
+            echo "❌ Admin should have 32 permissions, got $PERM_COUNT"
+            exit 1
+        fi
+        
+        # Verify roles exist
+        ROLE_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" \
+          http://localhost:3001/api/rbac/roles | jq 'length' 2>/dev/null)
+        
+        if [ "$ROLE_COUNT" -lt "6" ]; then
+            echo "❌ Should have at least 6 roles, got $ROLE_COUNT"
+            exit 1
+        fi
+        
+        # Verify permissions exist
+        TOTAL_PERMS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+          http://localhost:3001/api/rbac/permissions | jq 'length' 2>/dev/null)
+        
+        if [ "$TOTAL_PERMS" != "32" ]; then
+            echo "❌ Should have exactly 32 permissions, got $TOTAL_PERMS"
+            exit 1
+        fi
+        
+        echo "✅ RBAC system validation passed"
+        echo "✅ Admin has $PERM_COUNT permissions"
+        echo "✅ System has $ROLE_COUNT roles"
+        echo "✅ System has $TOTAL_PERMS total permissions"
+        echo ""
+        echo "🎉 All RBAC tests completed successfully!"
+        ;;
+    "test-setup")
+        echo "🔧 Setting up test environment..."
+        echo "================================"
+        
+        # Install dependencies
+        if [ ! -d "node_modules" ]; then
+            echo "📦 Installing dependencies..."
+            npm install
+        fi
+        
+        # Install test dependencies
+        echo "📦 Installing test dependencies..."
+        npm install --save-dev vitest @vitest/coverage-v8 @playwright/test supertest jest
+        
+        # Install Playwright browsers
+        if command -v npx > /dev/null 2>&1; then
+            echo "🎭 Installing Playwright browsers..."
+            npx playwright install
+        fi
+        
+        # Start application
+        echo "🚀 Starting application..."
+        $0 dev
+        
+        # Wait for services
+        echo "⏳ Waiting for services to be ready..."
+        sleep 15
+        
+        timeout 60 bash -c 'until curl -f http://localhost:3001/api/health; do sleep 2; done' || {
+            echo "❌ Backend failed to start"
+            exit 1
+        }
+        
+        timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done' || {
+            echo "❌ Frontend failed to start"
+            exit 1
+        }
+        
+        echo "✅ Test environment setup complete"
+        echo "🧪 Ready to run tests with:"
+        echo "   $0 test         # All tests"
+        echo "   $0 test-unit    # Unit tests only"
+        echo "   $0 test-api     # API tests only"
+        echo "   $0 test-ui      # UI tests only"
+        echo "   $0 test-rbac    # RBAC tests only"
+        ;;
+    "test-cleanup")
+        echo "🧹 Cleaning up test environment..."
+        echo "=================================="
+        
+        # Stop containers
+        echo "🛑 Stopping containers..."
+        $0 stop
+        
+        # Clean up test artifacts
+        echo "🗑️  Removing test artifacts..."
+        rm -rf coverage/ 2>/dev/null || true
+        rm -rf playwright-report/ 2>/dev/null || true
+        rm -rf test-results/ 2>/dev/null || true
+        rm -rf .nyc_output/ 2>/dev/null || true
+        
+        # Clean up node_modules if requested
+        read -p "Remove node_modules? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "📦 Removing node_modules..."
+            rm -rf node_modules/
+        fi
+        
+        # Clean up Docker resources
+        read -p "Clean up Docker resources? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "🐳 Cleaning Docker resources..."
+            docker system prune -f
+        fi
+        
+        echo "✅ Test cleanup complete"
         ;;
     *)
         echo "❌ Unknown command: $MODE"

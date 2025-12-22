@@ -194,17 +194,15 @@ export class RBACService {
       
       // Assign permissions to role
       if (permissions.length > 0) {
-        const permissionValues = permissions.map((permId, index) => 
-          `($${index * 2 + 5}, $${index * 2 + 6})`
+        const permissionValues = permissions.map((_, index) => 
+          `($1, $${index + 2})`
         ).join(', ')
-        
-        const permissionParams = permissions.flatMap(permId => [role.id, permId])
         
         await query(`
           INSERT INTO role_permissions (role_id, permission_id)
           VALUES ${permissionValues}
           ON CONFLICT (role_id, permission_id) DO NOTHING
-        `, [role.id, ...permissionParams])
+        `, [role.id, ...permissions])
       }
       
       return role
@@ -293,10 +291,19 @@ export class RBACService {
       const result = await query(`
         SELECT g.*,
                u.email as created_by_email,
-               COALESCE(user_count.count, 0) as user_count,
                COALESCE(
                  json_agg(
-                   json_build_object(
+                   DISTINCT jsonb_build_object(
+                     'id', gu.id,
+                     'email', gu.email,
+                     'name', gu.name
+                   )
+                 ) FILTER (WHERE gu.id IS NOT NULL), 
+                 '[]'
+               ) as users,
+               COALESCE(
+                 json_agg(
+                   DISTINCT jsonb_build_object(
                      'id', r.id,
                      'name', r.name,
                      'display_name', r.display_name
@@ -306,15 +313,12 @@ export class RBACService {
                ) as roles
         FROM groups g
         LEFT JOIN users u ON g.created_by = u.id
+        LEFT JOIN user_groups ug ON g.id = ug.group_id
+        LEFT JOIN users gu ON ug.user_id = gu.id
         LEFT JOIN group_roles gr ON g.id = gr.group_id
         LEFT JOIN roles r ON gr.role_id = r.id
-        LEFT JOIN (
-          SELECT group_id, COUNT(*) as count 
-          FROM user_groups 
-          GROUP BY group_id
-        ) user_count ON g.id = user_count.group_id
         WHERE g.tenant_id = $1
-        GROUP BY g.id, g.name, g.description, g.tenant_id, g.created_by, g.created_at, g.updated_at, u.email, user_count.count
+        GROUP BY g.id, g.name, g.description, g.display_name, g.tenant_id, g.created_by, g.created_at, g.updated_at, u.email
         ORDER BY g.name
       `, [tenantId])
       
@@ -340,6 +344,39 @@ export class RBACService {
       return result.rows[0] || null
     } catch (error) {
       console.error('Error adding user to group:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Delete a role
+   */
+  static async deleteRole(roleId, tenantId) {
+    try {
+      // Check if it's a system role
+      const roleCheck = await query(`
+        SELECT is_system_role FROM roles 
+        WHERE id = $1 AND tenant_id = $2
+      `, [roleId, tenantId])
+      
+      if (roleCheck.rows.length === 0) {
+        return false
+      }
+      
+      if (roleCheck.rows[0].is_system_role) {
+        throw new Error('System roles cannot be deleted')
+      }
+      
+      // Delete role (cascading deletes will handle role_permissions, user_roles, group_roles)
+      const result = await query(`
+        DELETE FROM roles 
+        WHERE id = $1 AND tenant_id = $2 AND is_system_role = false
+        RETURNING *
+      `, [roleId, tenantId])
+      
+      return result.rowCount > 0
+    } catch (error) {
+      console.error('Error deleting role:', error)
       throw error
     }
   }

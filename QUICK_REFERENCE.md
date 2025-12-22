@@ -55,6 +55,18 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/groups 
 ./docker-start.sh clean    # Clean everything (⚠️ removes data)
 ```
 
+## 🧪 Testing Commands
+
+```bash
+./docker-start.sh test-setup   # Setup test environment (one-time)
+./docker-start.sh test         # Run all tests
+./docker-start.sh test-unit    # Unit tests only
+./docker-start.sh test-api     # API integration tests
+./docker-start.sh test-ui      # UI tests with Playwright
+./docker-start.sh test-rbac    # RBAC-specific tests
+./docker-start.sh test-cleanup # Cleanup test environment
+```
+
 ## 🗄️ Database Management
 
 ```bash
@@ -225,7 +237,13 @@ VITE_API_URL=http://localhost:3001
 7. **Delete objects** you created or have `objects.manage` permission
 8. **Real-time updates** via WebSocket for live synchronization
 9. **Edit objects** directly from map tooltips or ObjectDrawer (requires `objects.update`)
-10. **Manage users and roles** if you have admin permissions (`users.manage`, `roles.manage`)
+10. **Access Admin Panel** via shield icon in navbar (requires admin permissions)
+11. **Manage users and roles** in Admin Panel at `/admin`:
+    - **User Management**: Create users, assign roles, search and filter
+    - **Role Management**: Create custom roles with specific permissions
+    - **Group Management**: Organize users into groups for easier management
+    - **Permission Overview**: View all permissions and their usage across roles
+12. **Test RBAC system** with different user roles and permission levels
 
 ## 🆘 Common Issues
 

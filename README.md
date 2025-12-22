@@ -7,6 +7,7 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 - **Real-time Location Tracking**: Track objects with live position updates
 - **Multi-tenant Architecture**: Isolated data per tenant with role-based access control
 - **Role-Based Access Control (RBAC)**: Comprehensive permission system with 6 roles and 32 granular permissions
+- **RBAC Management Interface**: Complete frontend for managing users, roles, groups, and permissions
 - **Interactive Map Interface**: Leaflet-based map with custom emoji markers and enhanced tooltips
 - **Enhanced Map Tooltips**: Status display, object details, and action buttons directly on map popups
 - **Filtering & Search**: Filter by object type, time range, tags, and proximity
@@ -14,6 +15,7 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 - **Dynamic Object Types**: Choose from existing types or create custom types with emoji icons and usage statistics
 - **Location History**: View historical movement data for each object
 - **User & Group Management**: Organize users into groups with role-based permissions
+- **RBAC Administration Panel**: Complete UI for managing users, roles, groups, and permissions (accessible via /admin)
 - **Permission-Based Actions**: Granular access control for all application resources
 - **Responsive Design**: Works on desktop, tablet, and mobile devices
 - **Real-time Updates**: WebSocket integration for live data synchronization
@@ -101,6 +103,29 @@ npm run dev
 - **Super Admin**: `admin@demo.com` / `password` (Full system access)
 - **Test Users**: Create additional users with different roles for testing
 
+### Testing
+
+The application includes comprehensive testing capabilities:
+
+```bash
+# Setup test environment (one-time)
+./docker-start.sh test-setup
+
+# Run all tests
+./docker-start.sh test
+
+# Run specific test suites
+./docker-start.sh test-unit    # Unit tests
+./docker-start.sh test-api     # API integration tests
+./docker-start.sh test-ui      # UI tests with Playwright
+./docker-start.sh test-rbac    # RBAC-specific tests
+
+# Cleanup test environment
+./docker-start.sh test-cleanup
+```
+
+See [TESTING.md](TESTING.md) for comprehensive testing documentation.
+
 ### Default Role Hierarchy
 1. **Super Administrator** - Full system access (32 permissions)
 2. **Administrator** - Full management except system admin (31 permissions)  
@@ -118,14 +143,20 @@ npm run dev
 │   │   ├── Sidebar.jsx    # Filters and controls with real-time updates
 │   │   ├── ObjectDrawer.jsx # Object details panel with edit/delete actions
 │   │   ├── CreateObjectModal.jsx # Object creation with dynamic type selection
-│   │   ├── Navbar.jsx     # Navigation and user menu
-│   │   └── ProtectedRoute.jsx # Authentication wrapper
+│   │   ├── Navbar.jsx     # Navigation and user menu with admin access
+│   │   ├── ProtectedRoute.jsx # Authentication wrapper
+│   │   └── admin/         # RBAC administration components
+│   │       ├── UserManagement.jsx # User management with role assignment
+│   │       ├── RoleManagement.jsx # Role creation and permission management
+│   │       ├── GroupManagement.jsx # Group creation and user assignment
+│   │       └── PermissionOverview.jsx # Permission viewing and analysis
 │   ├── contexts/          # React contexts
 │   │   ├── AuthContext.jsx # Authentication state management
 │   │   └── TenantContext.jsx # Multi-tenant state management
 │   ├── pages/             # Page components
 │   │   ├── LoginPage.jsx  # Authentication page
-│   │   └── DashboardPage.jsx # Main dashboard with map and sidebar
+│   │   ├── DashboardPage.jsx # Main dashboard with map and sidebar
+│   │   └── AdminPage.jsx  # RBAC administration interface
 │   ├── hooks/             # Custom React hooks
 │   │   └── useWebSocket.js # WebSocket connection management
 │   └── ...
@@ -169,9 +200,12 @@ npm run dev
 - `GET /api/objects/tags` - Get existing tags with usage counts
 - `GET /api/objects/:id/locations` - Get location history for object
 
-### RBAC (Role-Based Access Control)
+### RBAC Management
+- `GET /api/users` - List all users with roles (requires `users.manage`)
+- `POST /api/users` - Create new user (requires `users.create`)
 - `GET /api/rbac/roles` - List all roles with permissions (requires `roles.read`)
 - `POST /api/rbac/roles` - Create new role (requires `roles.create`)
+- `DELETE /api/rbac/roles/:id` - Delete role (requires `roles.delete`)
 - `GET /api/rbac/permissions` - List all available permissions (requires `roles.read`)
 - `GET /api/rbac/groups` - List all groups with members (requires `groups.read`)
 - `POST /api/rbac/groups` - Create new group (requires `groups.create`)
@@ -321,11 +355,10 @@ npm run build
 - [x] Permission-based API endpoint protection
 
 ### In Progress 🚧
-- [ ] Frontend UI for RBAC management (role/group administration)
-- [ ] Complete edit functionality with backend API integration
 - [ ] Advanced filtering (geofencing, custom date ranges)
 - [ ] Bulk object import/export functionality
 - [ ] Advanced analytics and reporting
+- [ ] Audit logging for security and compliance
 
 ### Planned 📋
 - [ ] Audit logging for security and compliance

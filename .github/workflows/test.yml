@@ -1,0 +1,303 @@
+name: RBAC Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run unit tests with coverage
+      run: npm run test:unit:coverage
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: unit-tests
+        name: unit-test-coverage
+
+  api-tests:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: location_tracker_test
+          POSTGRES_USER: tracker_user
+          POSTGRES_PASSWORD: tracker_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Setup test database
+      run: |
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/init.sql
+      env:
+        PGPASSWORD: tracker_password
+    
+    - name: Start backend server
+      run: |
+        npm run dev:backend &
+        sleep 10
+      env:
+        NODE_ENV: test
+        JWT_SECRET: test-jwt-secret-key
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: location_tracker_test
+        DB_USER: tracker_user
+        DB_PASSWORD: tracker_password
+    
+    - name: Run API integration tests
+      run: npm run test:api
+      env:
+        NODE_ENV: test
+        JWT_SECRET: test-jwt-secret-key
+
+  ui-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps
+    
+    - name: Start application with Docker
+      run: |
+        ./docker-start.sh dev
+        sleep 30
+    
+    - name: Wait for application to be ready
+      run: |
+        timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:3001/api/health; do sleep 2; done'
+    
+    - name: Run Playwright tests
+      run: npm run test:ui
+    
+    - name: Upload Playwright report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: playwright-report
+        path: playwright-report/
+        retention-days: 30
+
+  security-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run security audit
+      run: npm audit --audit-level moderate
+    
+    - name: Check for known vulnerabilities
+      run: |
+        npx audit-ci --moderate
+      continue-on-error: true
+
+  rbac-validation:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, api-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Start application
+      run: |
+        ./docker-start.sh dev
+        sleep 30
+    
+    - name: Validate RBAC system
+      run: |
+        # Test admin login
+        TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+        
+        # Verify admin has all permissions
+        PERM_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" \
+          http://localhost:3001/api/auth/validate | jq '.permissions | length')
+        
+        if [ "$PERM_COUNT" -ne 32 ]; then
+          echo "❌ Admin should have 32 permissions, got $PERM_COUNT"
+          exit 1
+        fi
+        
+        # Verify roles exist
+        ROLE_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" \
+          http://localhost:3001/api/rbac/roles | jq 'length')
+        
+        if [ "$ROLE_COUNT" -lt 6 ]; then
+          echo "❌ Should have at least 6 roles, got $ROLE_COUNT"
+          exit 1
+        fi
+        
+        # Verify permissions exist
+        TOTAL_PERMS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+          http://localhost:3001/api/rbac/permissions | jq 'length')
+        
+        if [ "$TOTAL_PERMS" -ne 32 ]; then
+          echo "❌ Should have exactly 32 permissions, got $TOTAL_PERMS"
+          exit 1
+        fi
+        
+        echo "✅ RBAC system validation passed"
+        echo "✅ Admin has $PERM_COUNT permissions"
+        echo "✅ System has $ROLE_COUNT roles"
+        echo "✅ System has $TOTAL_PERMS total permissions"
+
+  performance-tests:
+    runs-on: ubuntu-latest
+    needs: [api-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Start application
+      run: |
+        ./docker-start.sh dev
+        sleep 30
+    
+    - name: Performance test - Authentication
+      run: |
+        echo "Testing authentication performance..."
+        time for i in {1..50}; do
+          curl -s -X POST http://localhost:3001/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@demo.com","password":"password"}' > /dev/null
+        done
+    
+    - name: Performance test - Permission checking
+      run: |
+        echo "Testing permission checking performance..."
+        TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+        
+        time for i in {1..100}; do
+          curl -s -H "Authorization: Bearer $TOKEN" \
+            http://localhost:3001/api/auth/validate > /dev/null
+        done
+    
+    - name: Performance test - RBAC endpoints
+      run: |
+        echo "Testing RBAC endpoints performance..."
+        TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+        
+        time for i in {1..20}; do
+          curl -s -H "Authorization: Bearer $TOKEN" \
+            http://localhost:3001/api/rbac/roles > /dev/null &
+          curl -s -H "Authorization: Bearer $TOKEN" \
+            http://localhost:3001/api/rbac/permissions > /dev/null &
+          curl -s -H "Authorization: Bearer $TOKEN" \
+            http://localhost:3001/api/users > /dev/null &
+        done
+        wait
+
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, api-tests, ui-tests, rbac-validation, performance-tests]
+    if: always()
+    
+    steps:
+    - name: Test Summary
+      run: |
+        echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | ${{ needs.unit-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| API Tests | ${{ needs.api-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| UI Tests | ${{ needs.ui-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| RBAC Validation | ${{ needs.rbac-validation.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Performance Tests | ${{ needs.performance-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.unit-tests.result }}" == "success" && 
+              "${{ needs.api-tests.result }}" == "success" && 
+              "${{ needs.ui-tests.result }}" == "success" && 
+              "${{ needs.rbac-validation.result }}" == "success" ]]; then
+          echo "🎉 **All tests passed!** The RBAC system is working correctly." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **Some tests failed.** Please check the individual test results." >> $GITHUB_STEP_SUMMARY
+        fi

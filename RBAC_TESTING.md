@@ -366,28 +366,125 @@ curl -s -H "Authorization: Bearer invalid-token" http://localhost:3001/api/objec
 
 ## Frontend Testing
 
-### 1. Login with Different Users
+### 1. Admin Panel Access
 
-1. Open http://localhost:3000
-2. Login with different user credentials:
-   - `admin@demo.com` / `password` (Super Admin)
-   - `viewer@test.com` / `password123` (Viewer)
-   - `operator@test.com` / `password123` (Operator)
-   - `manager@test.com` / `password123` (Manager)
+1. **Login as Super Administrator:**
+   - Email: `admin@demo.com`
+   - Password: `password`
+   - Should see shield icon in navbar
 
-### 2. Verify UI Behavior
+2. **Access Admin Panel:**
+   - Click shield icon in navbar OR navigate to `/admin`
+   - Should see 4 tabs: Users, Roles, Groups, Permissions
 
-- **Super Admin**: Should see all features and buttons
-- **Viewer**: Should only see read-only interface, no create/edit/delete buttons
-- **Operator**: Should see object management features but no user management
-- **Manager**: Should see team management features
+### 2. User Management Testing
 
-### 3. Test Object Actions
+1. **View Users:**
+   - Navigate to Users tab
+   - Should see list of all users with roles and creation dates
+   - Search functionality should work
 
-1. Create objects with different users
-2. Verify only creators can edit/delete their objects
-3. Verify admins can edit/delete any object
-4. Test map tooltip actions with different permission levels
+2. **Create New User:**
+   - Click "Add User" button
+   - Fill form: email, password, name (optional), initial role
+   - Submit and verify user appears in list
+
+3. **Assign/Remove Roles:**
+   - Click edit button on any user
+   - Should see current roles and available roles
+   - Add new role and verify it appears
+   - Remove role and verify it's removed
+
+### 3. Role Management Testing
+
+1. **View Roles:**
+   - Navigate to Roles tab
+   - Should see grid of role cards with permission counts
+   - System roles should have blue shield icon
+
+2. **Create Custom Role:**
+   - Click "Create Role" button
+   - Fill basic information (name, display name, description)
+   - Select permissions by resource group
+   - Use "Select All" / "Deselect All" for resource groups
+   - Submit and verify role appears in list
+
+3. **View Role Details:**
+   - Click "View Permissions" on any role
+   - Should see detailed permission breakdown by resource
+   - System roles should show as read-only
+
+### 4. Group Management Testing
+
+1. **View Groups:**
+   - Navigate to Groups tab
+   - Should see grid of group cards with member counts
+
+2. **Create New Group:**
+   - Click "Create Group" button
+   - Fill form: name, display name, description
+   - Submit and verify group appears in list
+
+3. **Manage Group Members:**
+   - Click "Manage Members" on any group
+   - Should see current members list
+   - Add new member from dropdown
+   - Remove member and verify removal
+
+### 5. Permission Overview Testing
+
+1. **View Permission Summary:**
+   - Navigate to Permissions tab
+   - Should see 4 summary cards: Total Permissions, Resources, Active Roles, Avg Usage
+
+2. **Search and Filter:**
+   - Use search box to filter permissions
+   - Use resource dropdown to filter by resource type
+   - Verify filtering works correctly
+
+3. **Permission Usage Analysis:**
+   - Each permission should show usage count (how many roles use it)
+   - Color-coded badges: Unused (gray), Low usage (yellow), Active (green)
+   - Permissions grouped by resource (objects, users, roles, groups, types, icons)
+
+### 6. Permission-Based UI Testing
+
+Test with different user roles to verify UI adapts correctly:
+
+1. **Super Administrator** (`admin@demo.com`):
+   - Should see all 4 tabs in admin panel
+   - All buttons and actions should be available
+   - Can create/edit/delete users, roles, groups
+
+2. **Administrator** (create test user with admin role):
+   - Should see all tabs except system admin functions
+   - Can manage users, roles, groups
+   - Cannot delete system roles
+
+3. **Manager** (create test user with manager role):
+   - Should see Users and Groups tabs only
+   - Can manage users and groups
+   - Cannot access Roles or Permissions tabs
+
+4. **Lower Roles** (Operator, Viewer, User):
+   - Should not see admin panel at all
+   - Shield icon should not appear in navbar
+   - Direct navigation to `/admin` should redirect to dashboard
+
+### 7. Real-time Updates Testing
+
+1. **Multi-tab Testing:**
+   - Open admin panel in two browser tabs
+   - Create user in one tab
+   - Verify user appears in other tab automatically
+
+2. **Role Assignment Updates:**
+   - Assign role to user in one tab
+   - Verify role appears in user list in other tab
+
+3. **WebSocket Integration:**
+   - Verify real-time updates work across all admin components
+   - Check browser console for WebSocket connection messages
 
 ## Troubleshooting
 
@@ -432,16 +529,159 @@ curl -s -H "Authorization: Bearer invalid-token" http://localhost:3001/api/objec
 docker-compose exec database psql -U tracker_user -d location_tracker -f /path/to/migrate_add_rbac.sql
 ```
 
-## Expected Results
+## Automated Testing
 
-After running all tests, you should verify:
+### Unit Tests
 
-1. ✅ All 6 roles have correct permission counts
-2. ✅ Permission-based API access works correctly
-3. ✅ Object ownership restrictions are enforced
-4. ✅ Group-based role inheritance functions properly
-5. ✅ Frontend UI adapts to user permissions
-6. ✅ Error handling works for unauthorized access
-7. ✅ Multi-role support allows flexible permission combinations
+Run comprehensive unit tests for RBAC components:
 
-This comprehensive testing ensures the RBAC system provides secure, granular access control across all application resources.
+```bash
+# Run all RBAC unit tests
+npm run test:unit
+
+# Run with coverage
+npm run test:unit:coverage
+
+# Watch mode for development
+npm run test:unit:watch
+```
+
+**Unit Test Coverage:**
+- RBACService class methods
+- User model authentication
+- Permission validation logic
+- Role hierarchy validation
+- Password security
+- Email validation
+
+### API Integration Tests
+
+Test the complete RBAC API functionality:
+
+```bash
+# Run API integration tests
+npm run test:api
+
+# Run all integration tests
+npm run test:integration
+```
+
+**API Test Coverage:**
+- Authentication endpoints
+- Role management APIs
+- User management APIs
+- Group management APIs
+- Permission-based access control
+- Object ownership validation
+- Error handling scenarios
+
+### UI Integration Tests
+
+Test the RBAC frontend with Playwright:
+
+```bash
+# Run UI tests (headless)
+npm run test:ui
+
+# Run with browser visible
+npm run test:ui:headed
+
+# Debug mode with inspector
+npm run test:ui:debug
+```
+
+**UI Test Coverage:**
+- Admin panel access control
+- User management interface
+- Role creation and assignment
+- Group management
+- Permission overview
+- Real-time updates
+- Error handling
+- Accessibility compliance
+
+### Complete Test Suite
+
+```bash
+# Run all tests (unit + integration + UI)
+npm test
+
+# Setup test environment
+npm run test:setup
+
+# Cleanup after testing
+npm run test:cleanup
+```
+
+## Test Results Validation
+
+After running tests, verify the following results:
+
+### Unit Tests ✅
+- **RBACService**: All permission checking logic works correctly
+- **User Model**: Authentication and user management functions properly
+- **Permission Validation**: All 32 permissions are properly validated
+- **Role Hierarchy**: 6 roles have correct permission counts
+
+### API Tests ✅
+- **Authentication**: Login/logout and token validation work
+- **Permission Enforcement**: API endpoints properly check permissions
+- **Object Ownership**: Users can only modify their own objects (unless admin)
+- **Role Management**: Admins can create/delete roles, assign permissions
+- **User Management**: User creation, role assignment, and management work
+- **Group Management**: Group creation and user assignment function correctly
+
+### UI Tests ✅
+- **Admin Panel**: Only users with admin permissions can access
+- **User Interface**: UI adapts based on user permissions
+- **CRUD Operations**: Create, read, update, delete operations work in UI
+- **Real-time Updates**: Changes reflect immediately across browser tabs
+- **Error Handling**: Graceful error messages for permission denied scenarios
+- **Accessibility**: Keyboard navigation and ARIA labels work properly
+
+## Performance Testing
+
+### Load Testing RBAC Endpoints
+
+```bash
+# Test role assignment performance
+for i in {1..100}; do
+  curl -s -X POST http://localhost:3001/api/rbac/users/1/roles \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"roleId": 2}' &
+done
+wait
+
+# Test permission checking performance
+for i in {1..1000}; do
+  curl -s -H "Authorization: Bearer $TOKEN" \
+    http://localhost:3001/api/auth/validate &
+done
+wait
+```
+
+### Database Performance
+
+```bash
+# Check RBAC query performance
+./docker-start.sh db
+\timing on
+
+-- Test permission lookup performance
+EXPLAIN ANALYZE SELECT DISTINCT p.name 
+FROM permissions p
+WHERE p.id IN (
+  SELECT rp.permission_id 
+  FROM user_roles ur 
+  JOIN role_permissions rp ON ur.role_id = rp.role_id 
+  WHERE ur.user_id = 1
+);
+
+-- Test role hierarchy query performance
+EXPLAIN ANALYZE SELECT r.*, COUNT(rp.permission_id) as permission_count
+FROM roles r
+LEFT JOIN role_permissions rp ON r.id = rp.role_id
+GROUP BY r.id
+ORDER BY permission_count DESC;
+```

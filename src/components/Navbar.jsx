@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { 
   Menu, 
   Search, 
@@ -8,14 +9,25 @@ import {
   User, 
   LogOut, 
   Settings,
-  ChevronDown
+  ChevronDown,
+  Shield
 } from 'lucide-react'
 
 const Navbar = ({ sidebarOpen, setSidebarOpen }) => {
   const { user, logout } = useAuth()
   const { currentTenant } = useTenant()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
   const [showUserMenu, setShowUserMenu] = useState(false)
+
+  // Check if user has admin permissions
+  const hasAdminAccess = user?.permissions?.some(p => 
+    p.name === 'users.manage' || 
+    p.name === 'roles.manage' || 
+    p.name === 'groups.manage' ||
+    p.name === 'system.admin'
+  )
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -61,6 +73,20 @@ const Navbar = ({ sidebarOpen, setSidebarOpen }) => {
         </div>
 
         <div className="flex items-center space-x-4">
+          {hasAdminAccess && (
+            <button
+              onClick={() => navigate(location.pathname === '/admin' ? '/' : '/admin')}
+              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                location.pathname === '/admin'
+                  ? 'bg-primary-100 text-primary-700'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <Shield className="h-4 w-4 mr-2" />
+              {location.pathname === '/admin' ? 'Dashboard' : 'Admin'}
+            </button>
+          )}
+          
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}

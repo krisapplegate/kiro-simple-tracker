@@ -278,6 +278,76 @@ app.get('/api/rbac/users/:userId', authenticateToken, requireUserManagement(), a
   }
 })
 
+// Get all users for admin management
+app.get('/api/users', authenticateToken, requireUserManagement(), async (req, res) => {
+  try {
+    const users = await User.findByTenant(req.user.tenantId)
+    res.json(users)
+  } catch (error) {
+    console.error('Get users error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new user
+app.post('/api/users', authenticateToken, requirePermission('users.create'), async (req, res) => {
+  try {
+    const { email, password, name, roleId } = req.body
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' })
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findByEmail(email)
+    if (existingUser) {
+      return res.status(409).json({ message: 'User with this email already exists' })
+    }
+
+    const userData = {
+      email,
+      password,
+      name,
+      tenantId: req.user.tenantId,
+      role: 'user' // Default role
+    }
+
+    const newUser = await User.create(userData)
+
+    // Assign initial role if provided
+    if (roleId) {
+      await RBACService.assignRoleToUser(newUser.id, parseInt(roleId), req.user.id)
+    }
+
+    res.status(201).json({
+      id: newUser.id,
+      email: newUser.email,
+      name: newUser.name,
+      created_at: newUser.created_at
+    })
+  } catch (error) {
+    console.error('Create user error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Delete role
+app.delete('/api/rbac/roles/:roleId', authenticateToken, requirePermission('roles.delete'), async (req, res) => {
+  try {
+    const roleId = parseInt(req.params.roleId)
+    
+    const success = await RBACService.deleteRole(roleId, req.user.tenantId)
+    if (success) {
+      res.json({ message: 'Role deleted successfully' })
+    } else {
+      res.status(404).json({ message: 'Role not found or cannot be deleted' })
+    }
+  } catch (error) {
+    console.error('Delete role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
 // Object routes
 app.get('/api/objects', authenticateToken, requirePermission('objects.read'), async (req, res) => {
   try {

@@ -243,7 +243,63 @@ ORDER BY lh.timestamp DESC
 LIMIT 10;
 ```
 
-## Troubleshooting
+## Testing
+
+### Quick Testing with Docker
+
+The easiest way to run tests is using the Docker helper script:
+
+```bash
+# One-time setup (installs dependencies, browsers, starts app)
+./docker-start.sh test-setup
+
+# Run all tests
+./docker-start.sh test
+
+# Run specific test suites
+./docker-start.sh test-unit    # Unit tests only
+./docker-start.sh test-api     # API integration tests
+./docker-start.sh test-ui      # UI tests with Playwright
+./docker-start.sh test-rbac    # RBAC-specific tests
+
+# Cleanup when done
+./docker-start.sh test-cleanup
+```
+
+### Manual Testing Setup
+
+If you prefer to run tests manually:
+
+```bash
+# Install test dependencies
+npm install --save-dev vitest @vitest/coverage-v8 @playwright/test supertest jest
+
+# Install Playwright browsers
+npx playwright install
+
+# Start application
+./docker-start.sh dev
+
+# Run tests
+npm run test:unit          # Unit tests
+npm run test:api           # API tests
+npm run test:ui            # UI tests
+```
+
+### Test Development
+
+```bash
+# Run tests in watch mode during development
+npm run test:unit:watch
+
+# Run UI tests with browser visible for debugging
+npm run test:ui:headed
+
+# Debug UI tests with Playwright inspector
+npm run test:ui:debug
+```
+
+For comprehensive testing documentation, see [TESTING.md](TESTING.md).
 
 ### Common Issues
 
