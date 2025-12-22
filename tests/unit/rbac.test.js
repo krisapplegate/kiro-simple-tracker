@@ -267,7 +267,7 @@ describe('Permission Validation', () => {
     'groups.read', 'groups.create', 'groups.update', 'groups.delete', 'groups.manage',
     'types.read', 'types.create', 'types.update', 'types.delete', 'types.manage',
     'icons.read', 'icons.create', 'icons.update', 'icons.delete', 'icons.manage',
-    'system.admin'
+    'system.admin', 'system.audit'
   ]
 
   it('should validate all expected permissions exist', () => {

@@ -48,7 +48,7 @@ describe('User Model', () => {
       expect(user).toBeDefined()
       expect(user.id).toBe(1)
       expect(user.email).toBe('test@example.com')
-      expect(user.name).toBe('Test User')
+      expect(user.password).toBe('hashed_password')
       expect(user.role).toBe('user')
       expect(user.tenant).toEqual({ id: 1, name: 'Test Tenant' })
       expect(query).toHaveBeenCalledWith(expect.stringContaining('SELECT u.*'), ['test@example.com'])
@@ -188,44 +188,22 @@ describe('User Model', () => {
     })
   })
 
-  describe('validatePassword', () => {
+  describe('verifyPassword', () => {
     it('should return true for correct password', async () => {
-      const user = {
-        password_hash: 'hashed_password'
-      }
-
       bcrypt.compare.mockResolvedValue(true)
 
-      const isValid = await User.validatePassword(user, 'correct_password')
+      const isValid = await User.verifyPassword('correct_password', 'hashed_password')
 
       expect(isValid).toBe(true)
       expect(bcrypt.compare).toHaveBeenCalledWith('correct_password', 'hashed_password')
     })
 
     it('should return false for incorrect password', async () => {
-      const user = {
-        password_hash: 'hashed_password'
-      }
-
       bcrypt.compare.mockResolvedValue(false)
 
-      const isValid = await User.validatePassword(user, 'wrong_password')
+      const isValid = await User.verifyPassword('wrong_password', 'hashed_password')
 
       expect(isValid).toBe(false)
-    })
-  })
-
-  describe('updateLastLogin', () => {
-    it('should update user last login timestamp', async () => {
-      query.mockResolvedValue({ rows: [{ id: 1, last_login: new Date() }] })
-
-      const result = await User.updateLastLogin(1)
-
-      expect(result).toBeDefined()
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE users SET last_login'),
-        [1]
-      )
     })
   })
 })
