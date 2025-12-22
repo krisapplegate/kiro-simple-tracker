@@ -399,8 +399,7 @@ describe('RBAC API Integration Tests', () => {
     it('should create group', async () => {
       const groupData = {
         name: 'test-group',
-        displayName: 'Test Group',
-        description: 'Group for testing'
+        description: 'Test Group for testing'
       }
       
       const response = await request(API_URL)
@@ -410,7 +409,7 @@ describe('RBAC API Integration Tests', () => {
         .expect(201)
       
       expect(response.body.name).toBe(groupData.name)
-      expect(response.body.display_name).toBe(groupData.displayName)
+      expect(response.body.description).toBe(groupData.description)
       testGroupId = response.body.id
     })
 

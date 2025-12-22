@@ -279,7 +279,7 @@ app.get('/api/rbac/users/:userId', authenticateToken, requireUserManagement(), a
 })
 
 // Get all users for admin management
-app.get('/api/users', authenticateToken, requireUserManagement(), async (req, res) => {
+app.get('/api/users', authenticateToken, requirePermission('users.read'), async (req, res) => {
   try {
     const users = await User.findByTenant(req.user.tenantId)
     res.json(users)
