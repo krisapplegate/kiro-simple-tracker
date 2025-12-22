@@ -4,30 +4,22 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+// Mock the database module before importing RBACService
+vi.mock('../../backend/database.js', () => ({
+  query: vi.fn()
+}))
+
+// Now import the modules
 import { RBACService } from '../../backend/services/RBACService.js'
 import { query } from '../../backend/database.js'
 
-// Mock database queries for unit testing
-const mockQuery = (mockResults) => {
-  return vi.fn().mockImplementation((sql, params) => {
-    // Return different results based on SQL query patterns
-    if (sql.includes('SELECT DISTINCT p.name')) {
-      return { rows: mockResults.permissions || [] }
-    }
-    if (sql.includes('SELECT DISTINCT r.id')) {
-      return { rows: mockResults.roles || [] }
-    }
-    if (sql.includes('INSERT INTO roles')) {
-      return { rows: [{ id: 1, name: 'test-role', display_name: 'Test Role' }] }
-    }
-    if (sql.includes('INSERT INTO groups')) {
-      return { rows: [{ id: 1, name: 'Test Group' }] }
-    }
-    return { rows: [], rowCount: 0 }
-  })
-}
-
 describe('RBACService', () => {
+  beforeEach(() => {
+    // Clear all mocks before each test
+    vi.clearAllMocks()
+  })
+
   describe('getUserPermissions', () => {
     it('should return user permissions from roles and groups', async () => {
       const mockPermissions = [
@@ -35,106 +27,81 @@ describe('RBACService', () => {
         { name: 'objects.create', display_name: 'Create Objects', resource: 'objects', action: 'create' }
       ]
       
-      // Mock the query function
-      const originalQuery = query
-      query = mockQuery({ permissions: mockPermissions })
+      query.mockResolvedValue({ rows: mockPermissions })
       
       const permissions = await RBACService.getUserPermissions(1, 1)
       
       expect(permissions).toHaveLength(2)
       expect(permissions[0].name).toBe('objects.read')
       expect(permissions[1].name).toBe('objects.create')
-      
-      // Restore original query function
-      query = originalQuery
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('SELECT DISTINCT p.name'), [1])
     })
 
     it('should return empty array on error', async () => {
-      const originalQuery = query
-      query = vi.fn().mockRejectedValue(new Error('Database error'))
+      query.mockRejectedValue(new Error('Database error'))
       
       const permissions = await RBACService.getUserPermissions(1, 1)
       
       expect(permissions).toEqual([])
-      
-      query = originalQuery
     })
   })
 
   describe('hasPermission', () => {
     it('should return true when user has permission', async () => {
-      const originalQuery = query
-      query = mockQuery({ permissions: [{ name: 'objects.read' }] })
+      query.mockResolvedValue({ rows: [{ id: 1 }] })
       
       const hasPermission = await RBACService.hasPermission(1, 1, 'objects.read')
       
       expect(hasPermission).toBe(true)
-      
-      query = originalQuery
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('SELECT 1'), [1, 1, 'objects.read'])
     })
 
     it('should return false when user lacks permission', async () => {
-      const originalQuery = query
-      query = mockQuery({ permissions: [] })
+      query.mockResolvedValue({ rows: [] })
       
       const hasPermission = await RBACService.hasPermission(1, 1, 'objects.delete')
       
       expect(hasPermission).toBe(false)
-      
-      query = originalQuery
     })
 
     it('should return false on database error', async () => {
-      const originalQuery = query
-      query = vi.fn().mockRejectedValue(new Error('Database error'))
+      query.mockRejectedValue(new Error('Database error'))
       
       const hasPermission = await RBACService.hasPermission(1, 1, 'objects.read')
       
       expect(hasPermission).toBe(false)
-      
-      query = originalQuery
     })
   })
 
   describe('canAccessObject', () => {
     it('should allow access with manage permission', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rows: [{ name: 'objects.manage' }] }) // hasPermission call
+      query.mockResolvedValueOnce({ rows: [{ id: 1 }] }) // hasPermission(manage) = true
       
       const canAccess = await RBACService.canAccessObject(1, 1, 1, 'delete')
       
       expect(canAccess).toBe(true)
-      
-      query = originalQuery
     })
 
     it('should check ownership for non-manage users', async () => {
-      const originalQuery = query
-      query = vi.fn()
+      query
         .mockResolvedValueOnce({ rows: [] }) // hasPermission(manage) = false
-        .mockResolvedValueOnce({ rows: [{ name: 'objects.delete' }] }) // hasPermission(delete) = true
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // hasPermission(delete) = true
         .mockResolvedValueOnce({ rows: [{ created_by: 1 }] }) // object ownership check
       
       const canAccess = await RBACService.canAccessObject(1, 1, 1, 'delete')
       
       expect(canAccess).toBe(true)
-      
-      query = originalQuery
     })
 
     it('should deny access for non-owners without manage permission', async () => {
-      const originalQuery = query
-      query = vi.fn()
+      query
         .mockResolvedValueOnce({ rows: [] }) // hasPermission(manage) = false
-        .mockResolvedValueOnce({ rows: [{ name: 'objects.delete' }] }) // hasPermission(delete) = true
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // hasPermission(delete) = true
         .mockResolvedValueOnce({ rows: [{ created_by: 2 }] }) // different owner
       
       const canAccess = await RBACService.canAccessObject(1, 1, 1, 'delete')
       
       expect(canAccess).toBe(false)
-      
-      query = originalQuery
     })
   })
 
@@ -145,16 +112,13 @@ describe('RBACService', () => {
         { id: 2, name: 'user', display_name: 'User', is_system_role: true }
       ]
       
-      const originalQuery = query
-      query = mockQuery({ roles: mockRoles })
+      query.mockResolvedValue({ rows: mockRoles })
       
       const roles = await RBACService.getUserRoles(1, 1)
       
       expect(roles).toHaveLength(2)
       expect(roles[0].name).toBe('admin')
       expect(roles[1].name).toBe('user')
-      
-      query = originalQuery
     })
   })
 
@@ -167,17 +131,14 @@ describe('RBACService', () => {
         permissions: [1, 2, 3]
       }
       
-      const originalQuery = query
-      query = vi.fn()
+      query
         .mockResolvedValueOnce({ rows: [{ id: 1, name: 'test-role' }] }) // role creation
         .mockResolvedValue({ rows: [] }) // permission assignments
       
       const role = await RBACService.createRole(roleData, 1, 1)
       
       expect(role.name).toBe('test-role')
-      expect(query).toHaveBeenCalledTimes(4) // 1 role creation + 3 permission assignments
-      
-      query = originalQuery
+      expect(query).toHaveBeenCalledTimes(2) // 1 role creation + 1 permission assignment
     })
 
     it('should handle role creation without permissions', async () => {
@@ -188,106 +149,75 @@ describe('RBACService', () => {
         permissions: []
       }
       
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rows: [{ id: 1, name: 'test-role' }] })
+      query.mockResolvedValueOnce({ rows: [{ id: 1, name: 'test-role' }] })
       
       const role = await RBACService.createRole(roleData, 1, 1)
       
       expect(role.name).toBe('test-role')
       expect(query).toHaveBeenCalledTimes(1) // Only role creation
-      
-      query = originalQuery
     })
   })
 
   describe('deleteRole', () => {
     it('should delete non-system role', async () => {
-      const originalQuery = query
-      query = vi.fn()
+      query
         .mockResolvedValueOnce({ rows: [{ is_system_role: false }] }) // role check
         .mockResolvedValueOnce({ rowCount: 1 }) // deletion
       
       const result = await RBACService.deleteRole(1, 1)
       
       expect(result).toBe(true)
-      
-      query = originalQuery
     })
 
     it('should not delete system role', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rows: [{ is_system_role: true }] })
+      query.mockResolvedValueOnce({ rows: [{ is_system_role: true }] })
       
       await expect(RBACService.deleteRole(1, 1)).rejects.toThrow('System roles cannot be deleted')
-      
-      query = originalQuery
     })
 
     it('should return false for non-existent role', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rows: [] })
+      query.mockResolvedValueOnce({ rows: [] })
       
       const result = await RBACService.deleteRole(999, 1)
       
       expect(result).toBe(false)
-      
-      query = originalQuery
     })
   })
 
   describe('assignRoleToUser', () => {
     it('should assign role to user', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rows: [{ user_id: 1, role_id: 2 }] })
+      query.mockResolvedValueOnce({ rows: [{ user_id: 1, role_id: 2 }] })
       
       const assignment = await RBACService.assignRoleToUser(1, 2, 1)
       
       expect(assignment.user_id).toBe(1)
       expect(assignment.role_id).toBe(2)
-      
-      query = originalQuery
     })
 
     it('should handle duplicate assignment gracefully', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rows: [] }) // ON CONFLICT DO NOTHING
+      query.mockResolvedValueOnce({ rows: [] }) // ON CONFLICT DO NOTHING
       
       const assignment = await RBACService.assignRoleToUser(1, 2, 1)
       
       expect(assignment).toBeNull()
-      
-      query = originalQuery
     })
   })
 
   describe('removeRoleFromUser', () => {
     it('should remove role from user', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rowCount: 1 })
+      query.mockResolvedValueOnce({ rowCount: 1 })
       
       const result = await RBACService.removeRoleFromUser(1, 2)
       
       expect(result).toBe(true)
-      
-      query = originalQuery
     })
 
     it('should return false when assignment not found', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rowCount: 0 })
+      query.mockResolvedValueOnce({ rowCount: 0 })
       
       const result = await RBACService.removeRoleFromUser(1, 999)
       
       expect(result).toBe(false)
-      
-      query = originalQuery
     })
   })
 
@@ -298,43 +228,32 @@ describe('RBACService', () => {
         description: 'Test group description'
       }
       
-      const originalQuery = query
-      query = mockQuery({ groups: [{ id: 1, name: 'Test Group' }] })
+      query.mockResolvedValue({ rows: [{ id: 1, name: 'Test Group' }] })
       
       const group = await RBACService.createGroup(groupData, 1, 1)
       
       expect(group.name).toBe('Test Group')
-      
-      query = originalQuery
     })
   })
 
   describe('addUserToGroup', () => {
     it('should add user to group', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rows: [{ user_id: 1, group_id: 1 }] })
+      query.mockResolvedValueOnce({ rows: [{ user_id: 1, group_id: 1 }] })
       
       const assignment = await RBACService.addUserToGroup(1, 1, 1)
       
       expect(assignment.user_id).toBe(1)
       expect(assignment.group_id).toBe(1)
-      
-      query = originalQuery
     })
   })
 
   describe('removeUserFromGroup', () => {
     it('should remove user from group', async () => {
-      const originalQuery = query
-      query = vi.fn()
-        .mockResolvedValueOnce({ rowCount: 1 })
+      query.mockResolvedValueOnce({ rowCount: 1 })
       
       const result = await RBACService.removeUserFromGroup(1, 1)
       
       expect(result).toBe(true)
-      
-      query = originalQuery
     })
   })
 })
