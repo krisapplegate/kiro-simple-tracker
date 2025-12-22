@@ -68,28 +68,44 @@ export class User {
   }
 
   static async findByTenant(tenantId) {
-    const result = await query(
-      `SELECT u.id, u.email, u.name, u.role, u.created_at,
-              COALESCE(
-                json_agg(
-                  json_build_object(
-                    'id', r.id,
-                    'name', r.name,
-                    'display_name', r.display_name
-                  )
-                ) FILTER (WHERE r.id IS NOT NULL), 
-                '[]'
-              ) as roles
-       FROM users u
-       LEFT JOIN user_roles ur ON u.id = ur.user_id
-       LEFT JOIN roles r ON ur.role_id = r.id
-       WHERE u.tenant_id = $1
-       GROUP BY u.id, u.email, u.name, u.role, u.created_at
-       ORDER BY u.created_at DESC`,
-      [tenantId]
-    )
-    
-    return result.rows
+    try {
+      // First, try the query with RBAC roles
+      const result = await query(
+        `SELECT u.id, u.email, u.name, u.role, u.created_at,
+                COALESCE(
+                  json_agg(
+                    json_build_object(
+                      'id', r.id,
+                      'name', r.name,
+                      'display_name', r.display_name
+                    )
+                  ) FILTER (WHERE r.id IS NOT NULL), 
+                  '[]'
+                ) as roles
+         FROM users u
+         LEFT JOIN user_roles ur ON u.id = ur.user_id
+         LEFT JOIN roles r ON ur.role_id = r.id
+         WHERE u.tenant_id = $1
+         GROUP BY u.id, u.email, u.name, u.role, u.created_at
+         ORDER BY u.created_at DESC`,
+        [tenantId]
+      )
+      
+      return result.rows
+    } catch (error) {
+      // If RBAC tables don't exist yet, fall back to simple query
+      console.log('RBAC tables not available, using simple user query:', error.message)
+      const result = await query(
+        `SELECT u.id, u.email, u.name, u.role, u.created_at,
+                '[]'::json as roles
+         FROM users u
+         WHERE u.tenant_id = $1
+         ORDER BY u.created_at DESC`,
+        [tenantId]
+      )
+      
+      return result.rows
+    }
   }
 
   static async verifyPassword(plainPassword, hashedPassword) {
