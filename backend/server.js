@@ -289,6 +289,87 @@ app.get('/api/objects/:id/locations', authenticateToken, async (req, res) => {
   }
 })
 
+// Object Type Configuration endpoints
+app.get('/api/object-type-configs', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT type_name, emoji, color 
+       FROM object_type_configs 
+       WHERE tenant_id = $1 
+       ORDER BY type_name ASC`,
+      [req.user.tenantId]
+    )
+    
+    const configs = result.rows.reduce((acc, row) => {
+      acc[row.type_name] = {
+        emoji: row.emoji,
+        color: row.color
+      }
+      return acc
+    }, {})
+    
+    res.json(configs)
+  } catch (error) {
+    console.error('Get object type configs error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.post('/api/object-type-configs', authenticateToken, async (req, res) => {
+  try {
+    const { typeName, emoji, color } = req.body
+
+    if (!typeName || !emoji) {
+      return res.status(400).json({ message: 'Type name and emoji are required' })
+    }
+
+    // Validate emoji (basic check for emoji characters)
+    const emojiRegex = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u
+    if (!emojiRegex.test(emoji)) {
+      return res.status(400).json({ message: 'Invalid emoji format' })
+    }
+
+    const result = await query(
+      `INSERT INTO object_type_configs (type_name, emoji, color, tenant_id) 
+       VALUES ($1, $2, $3, $4) 
+       ON CONFLICT (type_name, tenant_id) 
+       DO UPDATE SET emoji = $2, color = $3, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [typeName.toLowerCase(), emoji, color || '#6b7280', req.user.tenantId]
+    )
+
+    res.json({
+      typeName: result.rows[0].type_name,
+      emoji: result.rows[0].emoji,
+      color: result.rows[0].color
+    })
+  } catch (error) {
+    console.error('Create/update object type config error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.delete('/api/object-type-configs/:typeName', authenticateToken, async (req, res) => {
+  try {
+    const typeName = req.params.typeName.toLowerCase()
+    
+    const result = await query(
+      `DELETE FROM object_type_configs 
+       WHERE type_name = $1 AND tenant_id = $2`,
+      [typeName, req.user.tenantId]
+    )
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Object type config not found' })
+    }
+
+    res.json({ message: 'Object type config deleted successfully' })
+  } catch (error) {
+    console.error('Delete object type config error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
 // WebSocket connection handling
 wss.on('connection', (ws) => {
   ws.on('message', (message) => {

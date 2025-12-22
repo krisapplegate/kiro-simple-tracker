@@ -14,8 +14,28 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
   const [errors, setErrors] = useState({})
   const [showCustomType, setShowCustomType] = useState(false)
   const [customType, setCustomType] = useState('')
+  const [selectedEmoji, setSelectedEmoji] = useState('📍')
+  const [selectedColor, setSelectedColor] = useState('#6b7280')
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   const queryClient = useQueryClient()
+
+  // Common emojis for object types
+  const commonEmojis = [
+    '🚗', '🚙', '🚚', '🏍️', '🚲', '🛵', // Vehicles
+    '👤', '👥', '🧑‍💼', '👷', '🧑‍🔧', '🧑‍⚕️', // People
+    '📦', '📱', '💻', '🖥️', '⌚', '📷', // Devices/Assets
+    '🏠', '🏢', '🏭', '🏪', '🏫', '🏥', // Buildings
+    '📍', '📌', '🎯', '⭐', '🔴', '🟢', // Markers
+    '🔧', '⚙️', '🔨', '🛠️', '🔩', '⚡', // Tools
+    '🌟', '💎', '🎁', '📋', '📊', '📈'  // Misc
+  ]
+
+  const commonColors = [
+    '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b',
+    '#ef4444', '#06b6d4', '#84cc16', '#f97316',
+    '#6366f1', '#ec4899', '#14b8a6', '#f43f5e'
+  ]
 
   // Fetch existing object types
   const { data: existingTypes = [] } = useQuery({
@@ -28,6 +48,22 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
         }
       })
       if (!response.ok) return []
+      return response.json()
+    },
+    enabled: isOpen
+  })
+
+  // Fetch object type configurations
+  const { data: typeConfigs = {} } = useQuery({
+    queryKey: ['object-type-configs'],
+    queryFn: async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/object-type-configs', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (!response.ok) return {}
       return response.json()
     },
     enabled: isOpen
@@ -94,6 +130,31 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
     }
   })
 
+  const saveTypeConfigMutation = useMutation({
+    mutationFn: async ({ typeName, emoji, color }) => {
+      const token = localStorage.getItem('token')
+      
+      const response = await fetch('/api/object-type-configs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ typeName, emoji, color })
+      })
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Network error' }))
+        throw new Error(error.message || 'Failed to save type configuration')
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['object-type-configs'])
+    }
+  })
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -105,10 +166,13 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
     setNewTag('')
     setCustomType('')
     setShowCustomType(false)
+    setSelectedEmoji('📍')
+    setSelectedColor('#6b7280')
+    setShowEmojiPicker(false)
     setErrors({})
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setErrors({})
 
@@ -138,15 +202,30 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
       return
     }
 
-    // Create object with location
-    const objectData = {
-      ...formData,
-      type: finalType,
-      lat: location.lat,
-      lng: location.lng
-    }
+    try {
+      // If creating a custom type or updating an existing type's config
+      if (showCustomType || (finalType && (!typeConfigs[finalType] || 
+          typeConfigs[finalType].emoji !== selectedEmoji || 
+          typeConfigs[finalType].color !== selectedColor))) {
+        await saveTypeConfigMutation.mutateAsync({
+          typeName: finalType,
+          emoji: selectedEmoji,
+          color: selectedColor
+        })
+      }
 
-    createObjectMutation.mutate(objectData)
+      // Create object with location
+      const objectData = {
+        ...formData,
+        type: finalType,
+        lat: location.lat,
+        lng: location.lng
+      }
+
+      createObjectMutation.mutate(objectData)
+    } catch (error) {
+      setErrors({ submit: error.message })
+    }
   }
 
   const handleInputChange = (field, value) => {
@@ -160,6 +239,32 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
         ...prev,
         [field]: undefined
       }))
+    }
+  }
+
+  const handleTypeSelect = (typeName) => {
+    handleInputChange('type', typeName)
+    // Update emoji and color based on existing config
+    const config = typeConfigs[typeName]
+    if (config) {
+      setSelectedEmoji(config.emoji)
+      setSelectedColor(config.color)
+    } else {
+      // Set default emoji and color for new types
+      const defaultEmojis = {
+        vehicle: '🚗',
+        person: '👤',
+        asset: '📦',
+        device: '📱'
+      }
+      const defaultColors = {
+        vehicle: '#3b82f6',
+        person: '#10b981',
+        asset: '#8b5cf6',
+        device: '#f59e0b'
+      }
+      setSelectedEmoji(defaultEmojis[typeName] || '📍')
+      setSelectedColor(defaultColors[typeName] || '#6b7280')
     }
   }
 
@@ -270,23 +375,32 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
               <div className="space-y-2">
                 {/* Existing Types Grid */}
                 <div className="grid grid-cols-2 gap-2">
-                  {allTypes.map((type) => (
-                    <button
-                      key={type.name}
-                      type="button"
-                      onClick={() => handleInputChange('type', type.name)}
-                      className={`p-3 border rounded-md text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                        formData.type === type.name
-                          ? 'border-primary-500 bg-primary-50 text-primary-700'
-                          : 'border-gray-300'
-                      }`}
-                    >
-                      <div className="font-medium capitalize">{type.name}</div>
-                      {type.count > 0 && (
-                        <div className="text-xs text-gray-500">{type.count} existing</div>
-                      )}
-                    </button>
-                  ))}
+                  {allTypes.map((type) => {
+                    const config = typeConfigs[type.name]
+                    const emoji = config?.emoji || '📍'
+                    const color = config?.color || '#6b7280'
+                    
+                    return (
+                      <button
+                        key={type.name}
+                        type="button"
+                        onClick={() => handleTypeSelect(type.name)}
+                        className={`p-3 border rounded-md text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                          formData.type === type.name
+                            ? 'border-primary-500 bg-primary-50 text-primary-700'
+                            : 'border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="text-lg">{emoji}</span>
+                          <div className="font-medium capitalize">{type.name}</div>
+                        </div>
+                        {type.count > 0 && (
+                          <div className="text-xs text-gray-500">{type.count} existing</div>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
                 
                 {/* Custom Type Button */}
@@ -339,6 +453,77 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
               <p className="mt-1 text-sm text-red-600">{errors.type}</p>
             )}
           </div>
+
+          {/* Emoji and Color Customization */}
+          {(formData.type || showCustomType) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Icon & Color
+              </label>
+              <div className="space-y-3">
+                {/* Current Selection Preview */}
+                <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-md">
+                  <div 
+                    className="w-10 h-10 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-lg"
+                    style={{ backgroundColor: selectedColor }}
+                  >
+                    {selectedEmoji}
+                  </div>
+                  <div>
+                    <div className="font-medium">Preview</div>
+                    <div className="text-sm text-gray-500">How it will appear on the map</div>
+                  </div>
+                </div>
+
+                {/* Emoji Selection */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">Emoji</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="text-sm text-primary-600 hover:text-primary-700"
+                    >
+                      {showEmojiPicker ? 'Show Less' : 'Show More'}
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-8 gap-1">
+                    {(showEmojiPicker ? commonEmojis : commonEmojis.slice(0, 16)).map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => setSelectedEmoji(emoji)}
+                        className={`p-2 text-lg rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                          selectedEmoji === emoji ? 'bg-primary-100 ring-2 ring-primary-500' : ''
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Color Selection */}
+                <div>
+                  <span className="text-sm font-medium text-gray-700 mb-2 block">Background Color</span>
+                  <div className="grid grid-cols-6 gap-2">
+                    {commonColors.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setSelectedColor(color)}
+                        className={`w-8 h-8 rounded-full border-2 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 ${
+                          selectedColor === color ? 'border-gray-800' : 'border-gray-300'
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           <div>

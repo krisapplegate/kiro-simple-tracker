@@ -13,7 +13,21 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
-// Custom marker icons for different object types
+// Custom marker icons for different object types with emoji support
+const createEmojiIcon = (emoji, color) => {
+  return L.divIcon({
+    className: 'custom-emoji-marker',
+    html: `
+      <div class="w-10 h-10 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-lg" style="background-color: ${color}">
+        ${emoji}
+      </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  })
+}
+
+// Fallback function for types without emoji config
 const createCustomIcon = (color, type) => {
   return L.divIcon({
     className: 'custom-marker',
@@ -27,7 +41,7 @@ const createCustomIcon = (color, type) => {
   })
 }
 
-const typeColors = {
+const defaultTypeColors = {
   vehicle: '#3b82f6',
   person: '#10b981',
   asset: '#8b5cf6',
@@ -51,6 +65,32 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
   const [editingObject, setEditingObject] = useState(null)
   const { user } = useAuth()
   const queryClient = useQueryClient()
+
+  // Fetch object type configurations
+  const { data: typeConfigs = {} } = useQuery({
+    queryKey: ['object-type-configs'],
+    queryFn: async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/object-type-configs', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (!response.ok) throw new Error('Failed to fetch object type configs')
+      return response.json()
+    }
+  })
+
+  // Helper function to get icon for object type
+  const getObjectIcon = (type) => {
+    const config = typeConfigs[type]
+    if (config && config.emoji) {
+      return createEmojiIcon(config.emoji, config.color)
+    }
+    // Fallback to letter-based icon with default colors
+    const color = defaultTypeColors[type] || '#6b7280'
+    return createCustomIcon(color, type)
+  }
 
   // Delete object mutation
   const deleteObjectMutation = useMutation({
@@ -171,7 +211,7 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
           <Marker
             key={object.id}
             position={[object.lat, object.lng]}
-            icon={createCustomIcon(typeColors[object.type] || '#6b7280', object.type)}
+            icon={getObjectIcon(object.type)}
             eventHandlers={{
               click: () => onObjectSelect(object)
             }}
