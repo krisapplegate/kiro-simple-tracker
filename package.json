@@ -15,6 +15,7 @@
     "test:unit:coverage": "vitest run --coverage --config tests/vitest.config.js",
     "test:integration": "npm run test:api && npm run test:ui",
     "test:api": "vitest run tests/integration/rbac-api.test.js --config tests/vitest.integration.config.js",
+    "test:api:simple": "vitest run tests/integration/rbac-api-simple.test.js --config tests/vitest.integration.config.js",
     "test:ui": "playwright test --config tests/playwright.config.js",
     "test:ui:headed": "playwright test --headed --config tests/playwright.config.js",
     "test:ui:debug": "playwright test --debug --config tests/playwright.config.js",

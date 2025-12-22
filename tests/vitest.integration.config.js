@@ -12,8 +12,10 @@ export default defineConfig({
     setupFiles: ['./tests/setup.js'],
     include: ['tests/integration/**/*.test.js'],
     exclude: ['node_modules/**'],
-    testTimeout: 30000, // Longer timeout for integration tests
-    hookTimeout: 30000
+    testTimeout: 30000, // 30 second timeout for integration tests
+    hookTimeout: 30000,
+    bail: 1, // Stop on first failure to avoid hanging
+    reporter: 'verbose' // More detailed output
   },
   resolve: {
     alias: {

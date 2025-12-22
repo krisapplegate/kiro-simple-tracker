@@ -127,7 +127,26 @@ jobs:
         fi
     
     - name: Run API integration tests
-      run: npm run test:api
+      run: |
+        echo "Starting integration tests..."
+        echo "Backend PID: $BACKEND_PID"
+        echo "Testing backend health before tests..."
+        curl -f http://localhost:3001/api/health || echo "Backend health check failed"
+        
+        echo "Running simple integration tests first..."
+        timeout 120 npm run test:api:simple || {
+          echo "Simple tests failed or timed out"
+          echo "Checking backend status..."
+          ps aux | grep node || echo "No node processes found"
+          curl -f http://localhost:3001/api/health || echo "Backend not responding"
+          exit 1
+        }
+        
+        echo "Simple tests passed, running full test suite..."
+        timeout 300 npm run test:api || {
+          echo "Full tests timed out or failed"
+          exit 1
+        }
       env:
         NODE_ENV: test
         JWT_SECRET: test-jwt-secret-key-for-ci
