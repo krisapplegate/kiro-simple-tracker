@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTenant } from '../contexts/TenantContext'
 import { Navigate } from 'react-router-dom'
 import { 
   Users, 
@@ -16,10 +17,11 @@ import PermissionOverview from '../components/admin/PermissionOverview'
 
 const AdminPage = () => {
   const { user } = useAuth()
+  const { tenantUser, currentTenant } = useTenant()
   const [activeTab, setActiveTab] = useState('users')
 
-  // Check if user has admin permissions
-  const hasAdminAccess = user?.permissions?.some(p => 
+  // Check if user has admin permissions for current tenant
+  const hasAdminAccess = tenantUser?.permissions?.some(p => 
     p.name === 'users.manage' || 
     p.name === 'roles.manage' || 
     p.name === 'groups.manage' ||
@@ -27,7 +29,7 @@ const AdminPage = () => {
   )
 
   if (!user || !hasAdminAccess) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={`/tenant/${currentTenant?.id}/dashboard`} replace />
   }
 
   const tabs = [

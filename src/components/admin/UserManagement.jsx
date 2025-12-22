@@ -13,9 +13,11 @@ import {
   X
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { useTenant } from '../../contexts/TenantContext'
 
 const UserManagement = () => {
   const { user } = useAuth()
+  const { tenantId } = useTenant()
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRole, setSelectedRole] = useState('')
@@ -24,7 +26,7 @@ const UserManagement = () => {
 
   // Fetch users
   const { data: users = [], isLoading: usersLoading } = useQuery({
-    queryKey: ['admin-users'],
+    queryKey: ['admin-users', tenantId],
     queryFn: async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/users', {
@@ -32,12 +34,13 @@ const UserManagement = () => {
       })
       if (!response.ok) throw new Error('Failed to fetch users')
       return response.json()
-    }
+    },
+    enabled: !!tenantId
   })
 
   // Fetch roles for filtering and assignment
   const { data: roles = [] } = useQuery({
-    queryKey: ['rbac-roles'],
+    queryKey: ['rbac-roles', tenantId],
     queryFn: async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/rbac/roles', {
@@ -45,7 +48,8 @@ const UserManagement = () => {
       })
       if (!response.ok) throw new Error('Failed to fetch roles')
       return response.json()
-    }
+    },
+    enabled: !!tenantId
   })
 
   // Create user mutation
@@ -64,7 +68,7 @@ const UserManagement = () => {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['admin-users'])
+      queryClient.invalidateQueries(['admin-users', tenantId])
       setShowCreateModal(false)
     }
   })
@@ -85,7 +89,7 @@ const UserManagement = () => {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['admin-users'])
+      queryClient.invalidateQueries(['admin-users', tenantId])
     }
   })
 
@@ -101,7 +105,7 @@ const UserManagement = () => {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['admin-users'])
+      queryClient.invalidateQueries(['admin-users', tenantId])
     }
   })
 
