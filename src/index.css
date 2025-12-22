@@ -39,3 +39,24 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* Custom map markers */
+.custom-marker,
+.custom-emoji-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-marker div,
+.custom-emoji-marker div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Ensure emoji display properly */
+.custom-emoji-marker div {
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  line-height: 1;
+}
