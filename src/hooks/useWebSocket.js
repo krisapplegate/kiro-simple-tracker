@@ -43,6 +43,12 @@ export const useWebSocket = (url) => {
           
           // Handle different message types
           switch (message.type) {
+            case 'connected':
+              console.log('WebSocket connected, waiting for tenant join confirmation')
+              break
+            case 'tenant_joined':
+              console.log(`Successfully joined tenant ${message.tenantId}`)
+              break
             case 'location_update':
               // Invalidate objects query to refresh the map
               queryClient.invalidateQueries(['objects', tenantId])

@@ -489,11 +489,12 @@ app.post('/api/objects', authenticateToken, requirePermission('objects.create'),
       req.user.tenantId
     )
 
-    // Broadcast to WebSocket clients
+    // Broadcast to WebSocket clients for this tenant only
     wss.clients.forEach(client => {
-      if (client.readyState === 1) { // WebSocket.OPEN
+      if (client.readyState === 1 && client.tenantId === req.user.tenantId) { // WebSocket.OPEN
         client.send(JSON.stringify({
           type: 'object_created',
+          tenantId: req.user.tenantId,
           data: newObject
         }))
       }
@@ -522,11 +523,12 @@ app.delete('/api/objects/:id', authenticateToken, requireObjectAccess('delete'),
     )
 
     if (result.success) {
-      // Broadcast deletion to WebSocket clients
+      // Broadcast deletion to WebSocket clients for this tenant only
       wss.clients.forEach(client => {
-        if (client.readyState === 1) { // WebSocket.OPEN
+        if (client.readyState === 1 && client.tenantId === req.user.tenantId) { // WebSocket.OPEN
           client.send(JSON.stringify({
             type: 'object_deleted',
+            tenantId: req.user.tenantId,
             data: { id: objectId }
           }))
         }
@@ -684,6 +686,9 @@ app.delete('/api/object-type-configs/:typeName', authenticateToken, requirePermi
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
+  // Store tenant information for this connection
+  ws.tenantId = null
+  
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message)
@@ -693,9 +698,19 @@ wss.on('connection', (ws) => {
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong' }))
           break
+        case 'join_tenant':
+          // Associate this WebSocket connection with a tenant
+          ws.tenantId = data.tenantId
+          console.log(`WebSocket client joined tenant ${data.tenantId}`)
+          ws.send(JSON.stringify({ 
+            type: 'tenant_joined', 
+            tenantId: data.tenantId,
+            message: `Joined tenant ${data.tenantId}` 
+          }))
+          break
       }
     } catch (error) {
-      // Silent error handling
+      console.error('WebSocket message error:', error)
     }
   })
 
@@ -734,11 +749,12 @@ setInterval(async () => {
             obj.tenant_id
           )
 
-          // Broadcast update to WebSocket clients
+          // Broadcast update to WebSocket clients for this tenant only
           wss.clients.forEach(client => {
-            if (client.readyState === 1) {
+            if (client.readyState === 1 && client.tenantId === obj.tenant_id) {
               client.send(JSON.stringify({
                 type: 'location_update',
+                tenantId: obj.tenant_id,
                 data: updatedObject
               }))
             }
