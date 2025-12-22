@@ -56,6 +56,8 @@ jobs:
     - name: Setup test database
       run: |
         PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/init.sql
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/migrate_add_created_by.sql
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/migrate_add_object_type_configs.sql
         PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/migrate_add_rbac.sql
       env:
         PGPASSWORD: tracker_password
@@ -90,6 +92,39 @@ jobs:
         DB_NAME: location_tracker_test
         DB_USER: tracker_user
         DB_PASSWORD: tracker_password
+    
+    - name: Verify database setup
+      run: |
+        echo "Checking database tables..."
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -c "\dt"
+        echo "Checking admin user exists..."
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -c "SELECT email, role FROM users WHERE email = 'admin@demo.com';"
+        echo "Checking roles exist..."
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -c "SELECT name, display_name FROM roles LIMIT 5;"
+      env:
+        PGPASSWORD: tracker_password
+    
+    - name: Test admin login
+      run: |
+        echo "Testing admin login..."
+        curl -X POST http://localhost:3001/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@demo.com","password":"password"}' \
+          -v || echo "Admin login failed"
+        
+        echo "Testing /api/users endpoint..."
+        TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+        
+        if [ "$TOKEN" != "null" ] && [ "$TOKEN" != "" ]; then
+          echo "✅ Got admin token: ${TOKEN:0:20}..."
+          curl -X GET http://localhost:3001/api/users \
+            -H "Authorization: Bearer $TOKEN" \
+            -v || echo "Users endpoint failed"
+        else
+          echo "❌ Failed to get admin token"
+        fi
     
     - name: Run API integration tests
       run: npm run test:api
