@@ -74,28 +74,24 @@ describe('RBAC API Integration Tests', () => {
       const managerUser = await createTestUser({
         email: testUsers.manager.email,
         password: testUsers.manager.password,
-        name: 'Test Manager',
         roleId: testRoleIds.manager
       }, adminToken)
       
       const operatorUser = await createTestUser({
         email: testUsers.operator.email,
         password: testUsers.operator.password,
-        name: 'Test Operator',
         roleId: testRoleIds.operator
       }, adminToken)
       
       const viewerUser = await createTestUser({
         email: testUsers.viewer.email,
         password: testUsers.viewer.password,
-        name: 'Test Viewer',
         roleId: testRoleIds.viewer
       }, adminToken)
       
       const regularUser = await createTestUser({
         email: testUsers.user.email,
         password: testUsers.user.password,
-        name: 'Test User',
         roleId: testRoleIds.user
       }, adminToken)
       
@@ -304,7 +300,6 @@ describe('RBAC API Integration Tests', () => {
       const userData = {
         email: 'newuser@test.com',
         password: 'testpassword123',
-        name: 'New Test User',
         roleId: testRoleIds.user
       }
       
@@ -315,15 +310,13 @@ describe('RBAC API Integration Tests', () => {
         .expect(201)
       
       expect(response.body.email).toBe(userData.email)
-      expect(response.body.name).toBe(userData.name)
       expect(response.body.id).toBeDefined()
     })
 
     it('should prevent duplicate user creation', async () => {
       const userData = {
         email: testUsers.admin.email, // Existing email
-        password: 'testpassword123',
-        name: 'Duplicate User'
+        password: 'testpassword123'
       }
       
       await request(API_URL)
@@ -337,8 +330,7 @@ describe('RBAC API Integration Tests', () => {
       if (operatorToken) {
         const userData = {
           email: 'unauthorized@test.com',
-          password: 'password123',
-          name: 'Unauthorized User'
+          password: 'password123'
         }
         
         await request(API_URL)
@@ -645,8 +637,7 @@ describe('RBAC API Integration Tests', () => {
         .post('/api/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
-          // Missing email and password
-          name: 'Incomplete User'
+          // Missing email and password - should fail validation
         })
         .expect(400)
     })
