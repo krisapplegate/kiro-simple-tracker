@@ -9,10 +9,12 @@ tests/
 ├── unit/                    # Unit tests
 │   ├── rbac.test.js        # RBAC service tests
 │   ├── rbac-service.test.js # RBAC service unit tests
+│   ├── auth-middleware.test.js # Authentication middleware tests
 │   └── user.test.js        # User model tests
 ├── integration/            # Integration tests
 │   ├── rbac-api.test.js    # RBAC API tests
 │   ├── workspace-creation.test.js # Workspace creation tests
+│   ├── tenant-isolation.test.js # Tenant isolation tests
 │   └── rbac-ui.test.js     # RBAC UI tests (Playwright)
 ├── setup.js               # Global test setup
 ├── vitest.config.js       # Vitest configuration
@@ -70,6 +72,7 @@ The `./docker-start.sh` script provides convenient testing commands:
 ./docker-start.sh test-ui      # UI tests with Playwright
 ./docker-start.sh test-rbac    # RBAC-specific tests
 ./docker-start.sh test-workspace # Workspace creation tests
+./docker-start.sh test-isolation # Tenant isolation tests
 
 # Cleanup test environment
 ./docker-start.sh test-cleanup
@@ -90,6 +93,7 @@ npm run test:api           # API integration tests
 npm run test:ui            # UI tests with Playwright
 npm run test:rbac          # RBAC-specific tests
 npm run test:workspace     # Workspace creation tests
+npm run test:isolation     # Tenant isolation tests
 ```
 
 ### Development Workflow
@@ -282,6 +286,44 @@ describe('Multi-Workspace Access', () => {
 describe('Workspace Isolation', () => {
   it('should maintain separate data between workspaces')
   it('should allow same user email in multiple workspaces')
+})
+```
+
+#### Tenant Isolation Tests (`tests/integration/tenant-isolation.test.js`)
+
+**Coverage:**
+- Object isolation between workspaces
+- RBAC isolation between workspaces
+- Type configuration isolation
+- Cross-tenant access prevention
+- Error handling
+
+**Key Test Cases:**
+```javascript
+// Object isolation
+describe('Object Isolation', () => {
+  it('should create objects in different workspaces')
+  it('should only return objects from the specified workspace')
+  it('should not allow access to objects from other workspaces')
+  it('should allow deletion of objects within the same workspace')
+})
+
+// RBAC isolation
+describe('RBAC Isolation', () => {
+  it('should have separate roles for each workspace')
+  it('should have separate users for each workspace')
+})
+
+// Type configuration isolation
+describe('Type Configuration Isolation', () => {
+  it('should have separate object type configurations per workspace')
+})
+
+// Error handling
+describe('Error Handling', () => {
+  it('should reject access to non-existent workspace')
+  it('should reject access without tenant header when needed')
+  it('should handle invalid tenant ID format')
 })
 ```
 
@@ -499,6 +541,65 @@ docker exec -it simple-tracker-database-1 psql -U tracker_user -d location_track
       JOIN user_roles ur ON u.id = ur.user_id 
       JOIN roles r ON ur.role_id = r.id 
       WHERE u.tenant_id = $WORKSPACE_ID;"
+```
+
+### 7. Tenant Isolation Testing
+
+```bash
+# Test tenant isolation with objects
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+
+# Create objects in different workspaces
+OBJECT1_ID=$(curl -s -X POST http://localhost:3001/api/objects \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-Id: 1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Object in Workspace 1",
+    "type": "test",
+    "lat": 37.7749,
+    "lng": -122.4194
+  }' | jq -r '.id')
+
+OBJECT2_ID=$(curl -s -X POST http://localhost:3001/api/objects \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-Id: 2" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Object in Workspace 2", 
+    "type": "test",
+    "lat": 37.7849,
+    "lng": -122.4094
+  }' | jq -r '.id')
+
+# Verify objects are isolated
+echo "Objects in workspace 1:"
+curl -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-Id: 1" \
+  http://localhost:3001/api/objects | jq
+
+echo "Objects in workspace 2:"
+curl -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-Id: 2" \
+  http://localhost:3001/api/objects | jq
+
+# Test cross-tenant access (should fail)
+echo "Trying to delete workspace 1 object from workspace 2 context:"
+curl -X DELETE http://localhost:3001/api/objects/$OBJECT1_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-Id: 2" \
+  -w "HTTP Status: %{http_code}\n"
+
+# Cleanup
+curl -X DELETE http://localhost:3001/api/objects/$OBJECT1_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-Id: 1"
+
+curl -X DELETE http://localhost:3001/api/objects/$OBJECT2_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Tenant-Id: 2"
 ```
 
 ## UI Testing with Playwright

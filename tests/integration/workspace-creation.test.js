@@ -85,23 +85,20 @@ describe('Workspace Creation and Management', () => {
 
       const newWorkspaceId = createResponse.body.id
 
-      // Get user info for the new workspace to get a valid token
-      const userResponse = await request(API_URL)
-        .get(`/api/tenants/${newWorkspaceId}/user`)
+      // Check that roles were created for the new workspace
+      const rolesResponse = await request(API_URL)
+        .get('/api/rbac/roles')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Tenant-Id', newWorkspaceId.toString())
         .expect(200)
 
-      // Login again to get a token for the new workspace
-      const loginResponse = await request(API_URL)
-        .post('/api/auth/login')
-        .send({
-          email: 'admin@demo.com',
-          password: 'password'
-        })
-        .expect(200)
+      // Should have 6 default roles
+      expect(rolesResponse.body).toHaveLength(6)
+      
+      const roleNames = rolesResponse.body.map(r => r.name).sort()
+      expect(roleNames).toEqual(['admin', 'manager', 'operator', 'super_admin', 'user', 'viewer'])
 
-      // Note: The token will still be for tenant 1, but we can verify roles exist
-      // by checking if the user has access to the new workspace
+      // Verify the workspace appears in user's tenant list
       const tenantsResponse = await request(API_URL)
         .get('/api/tenants')
         .set('Authorization', `Bearer ${adminToken}`)
@@ -113,10 +110,8 @@ describe('Workspace Creation and Management', () => {
     })
 
     it('should assign super_admin role to workspace creator', async () => {
-      // This test verifies that the creator has super_admin role
-      // by checking if they can access admin-level endpoints
-      
-      const workspaceName = `Creator Role Test ${Date.now()}`
+      // Create a new workspace
+      const workspaceName = `Role Assignment Test ${Date.now()}`
       const createResponse = await request(API_URL)
         .post('/api/tenants')
         .set('Authorization', `Bearer ${adminToken}`)
@@ -125,14 +120,28 @@ describe('Workspace Creation and Management', () => {
 
       const newWorkspaceId = createResponse.body.id
 
-      // Verify user has access to the new workspace
-      const tenantsResponse = await request(API_URL)
-        .get('/api/tenants')
+      // Get users in the new workspace
+      const usersResponse = await request(API_URL)
+        .get('/api/users')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Tenant-Id', newWorkspaceId.toString())
         .expect(200)
 
-      const hasAccess = tenantsResponse.body.some(t => t.id === newWorkspaceId)
-      expect(hasAccess).toBe(true)
+      // Should have one user (the creator)
+      expect(usersResponse.body).toHaveLength(1)
+      expect(usersResponse.body[0].email).toBe('admin@demo.com')
+
+      // Get the user's roles in the new workspace
+      const userId = usersResponse.body[0].id
+      const userRolesResponse = await request(API_URL)
+        .get(`/api/rbac/users/${userId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Tenant-Id', newWorkspaceId.toString())
+        .expect(200)
+
+      // Should have super_admin role
+      const roleNames = userRolesResponse.body.roles.map(r => r.name)
+      expect(roleNames).toContain('super_admin')
     })
   })
 
@@ -171,7 +180,7 @@ describe('Workspace Creation and Management', () => {
       await request(API_URL)
         .get('/api/tenants/99999')
         .set('Authorization', `Bearer ${adminToken}`)
-        .expect(404)
+        .expect(403) // Access denied (user doesn't have access to this workspace)
     })
 
     it('should get user info for specific workspace', async () => {

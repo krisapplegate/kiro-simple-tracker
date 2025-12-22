@@ -85,7 +85,16 @@ export const TenantProvider = ({ children }) => {
     loading,
     error,
     switchTenant,
-    reloadTenant: () => loadTenantData(parseInt(tenantId))
+    reloadTenant: () => loadTenantData(parseInt(tenantId)),
+    // Helper function to get headers with tenant ID
+    getApiHeaders: () => {
+      const token = localStorage.getItem('token')
+      return {
+        'Authorization': `Bearer ${token}`,
+        'X-Tenant-Id': tenantId,
+        'Content-Type': 'application/json'
+      }
+    }
   }
 
   if (loading) {

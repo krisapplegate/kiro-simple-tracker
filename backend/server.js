@@ -46,10 +46,54 @@ const authenticateToken = (req, res, next) => {
     
     req.user = user
     
-    // Attach permissions and roles to user
+    // Check for tenant ID in custom header (for workspace switching)
+    const headerTenantId = req.headers['x-tenant-id'] ? parseInt(req.headers['x-tenant-id']) : null
+    // Check if there's a tenant ID in the path (for tenant-specific API calls)
+    const pathTenantId = req.params.tenantId ? parseInt(req.params.tenantId) : null
+    let effectiveTenantId = user.tenantId // Default to JWT tenant ID
+    
+    if (headerTenantId || pathTenantId) {
+      const requestedTenantId = headerTenantId || pathTenantId
+      
+      // Verify user has access to the requested tenant
+      try {
+        const userTenants = await User.getUserTenants(user.id)
+        const hasAccess = userTenants.some(t => t.id === requestedTenantId)
+        
+        if (!hasAccess) {
+          return res.status(403).json({ message: 'Access denied to this workspace' })
+        }
+        
+        effectiveTenantId = requestedTenantId
+      } catch (error) {
+        console.error('Error checking tenant access:', error)
+        return res.status(500).json({ message: 'Server error' })
+      }
+    }
+    
+    // Use effective tenant ID for permissions
+    req.user.effectiveTenantId = effectiveTenantId
+    
+    // Attach permissions and roles to user for the effective tenant
     try {
-      req.user.permissions = await RBACService.getUserPermissions(user.id, user.tenantId)
-      req.user.roles = await RBACService.getUserRoles(user.id, user.tenantId)
+      // For multi-tenant API calls, we need to get the user ID for the specific tenant
+      let effectiveUserId = user.id
+      
+      if (effectiveTenantId !== user.tenantId) {
+        // Get the user ID for this specific tenant
+        const tenantUserResult = await query(
+          'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+          [user.email, effectiveTenantId]
+        )
+        
+        if (tenantUserResult.rows.length > 0) {
+          effectiveUserId = tenantUserResult.rows[0].id
+        }
+      }
+      
+      req.user.effectiveUserId = effectiveUserId
+      req.user.permissions = await RBACService.getUserPermissions(effectiveUserId, effectiveTenantId)
+      req.user.roles = await RBACService.getUserRoles(effectiveUserId, effectiveTenantId)
     } catch (error) {
       console.error('Error loading user permissions:', error)
       req.user.permissions = []
@@ -217,12 +261,12 @@ app.post('/api/tenants', authenticateToken, async (req, res) => {
   try {
     const { name } = req.body
     
-    if (!name) {
+    if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Tenant name is required' })
     }
     
     // Create the new tenant
-    const tenant = await Tenant.create({ name })
+    const tenant = await Tenant.create({ name: name.trim() })
     
     // Initialize RBAC system for the new tenant
     const roles = await RBACService.initializeTenantRBAC(tenant.id)
@@ -279,7 +323,7 @@ app.post('/api/tenants', authenticateToken, async (req, res) => {
 // Get all roles for tenant
 app.get('/api/rbac/roles', authenticateToken, requirePermission('roles.read'), async (req, res) => {
   try {
-    const roles = await RBACService.getRoles(req.user.tenantId)
+    const roles = await RBACService.getRoles(req.user.effectiveTenantId)
     res.json(roles)
   } catch (error) {
     console.error('Get roles error:', error)
@@ -290,7 +334,7 @@ app.get('/api/rbac/roles', authenticateToken, requirePermission('roles.read'), a
 // Create new role
 app.post('/api/rbac/roles', authenticateToken, requirePermission('roles.create'), async (req, res) => {
   try {
-    const role = await RBACService.createRole(req.body, req.user.tenantId, req.user.id)
+    const role = await RBACService.createRole(req.body, req.user.effectiveTenantId, req.user.effectiveUserId)
     res.status(201).json(role)
   } catch (error) {
     console.error('Create role error:', error)
@@ -312,7 +356,7 @@ app.get('/api/rbac/permissions', authenticateToken, requirePermission('roles.rea
 // Get all groups for tenant
 app.get('/api/rbac/groups', authenticateToken, requirePermission('groups.read'), async (req, res) => {
   try {
-    const groups = await RBACService.getGroups(req.user.tenantId)
+    const groups = await RBACService.getGroups(req.user.effectiveTenantId)
     res.json(groups)
   } catch (error) {
     console.error('Get groups error:', error)
@@ -323,7 +367,7 @@ app.get('/api/rbac/groups', authenticateToken, requirePermission('groups.read'),
 // Create new group
 app.post('/api/rbac/groups', authenticateToken, requirePermission('groups.create'), async (req, res) => {
   try {
-    const group = await RBACService.createGroup(req.body, req.user.tenantId, req.user.id)
+    const group = await RBACService.createGroup(req.body, req.user.effectiveTenantId, req.user.effectiveUserId)
     res.status(201).json(group)
   } catch (error) {
     console.error('Create group error:', error)
@@ -399,8 +443,8 @@ app.delete('/api/rbac/groups/:groupId/users/:userId', authenticateToken, require
 app.get('/api/rbac/users/:userId', authenticateToken, requireUserManagement(), async (req, res) => {
   try {
     const userId = parseInt(req.params.userId)
-    const permissions = await RBACService.getUserPermissions(userId, req.user.tenantId)
-    const roles = await RBACService.getUserRoles(userId, req.user.tenantId)
+    const permissions = await RBACService.getUserPermissions(userId, req.user.effectiveTenantId)
+    const roles = await RBACService.getUserRoles(userId, req.user.effectiveTenantId)
     
     res.json({ permissions, roles })
   } catch (error) {
@@ -412,7 +456,7 @@ app.get('/api/rbac/users/:userId', authenticateToken, requireUserManagement(), a
 // Get all users for admin management
 app.get('/api/users', authenticateToken, requirePermission('users.read'), async (req, res) => {
   try {
-    const users = await User.findByTenant(req.user.tenantId)
+    const users = await User.findByTenant(req.user.effectiveTenantId)
     res.json(users)
   } catch (error) {
     console.error('Get users error:', error)
@@ -439,7 +483,7 @@ app.post('/api/users', authenticateToken, requirePermission('users.create'), asy
       email,
       password,
       name,
-      tenantId: req.user.tenantId,
+      tenantId: req.user.effectiveTenantId,
       role: 'user' // Default role
     }
 
@@ -447,7 +491,7 @@ app.post('/api/users', authenticateToken, requirePermission('users.create'), asy
 
     // Assign initial role if provided
     if (roleId) {
-      await RBACService.assignRoleToUser(newUser.id, parseInt(roleId), req.user.id)
+      await RBACService.assignRoleToUser(newUser.id, parseInt(roleId), req.user.effectiveUserId)
     }
 
     res.status(201).json({
@@ -467,7 +511,7 @@ app.delete('/api/rbac/roles/:roleId', authenticateToken, requirePermission('role
   try {
     const roleId = parseInt(req.params.roleId)
     
-    const success = await RBACService.deleteRole(roleId, req.user.tenantId)
+    const success = await RBACService.deleteRole(roleId, req.user.effectiveTenantId)
     if (success) {
       res.json({ message: 'Role deleted successfully' })
     } else {
@@ -495,7 +539,7 @@ app.get('/api/objects', authenticateToken, requirePermission('objects.read'), as
       filters.timeRange = timeRange
     }
 
-    const objects = await TrackedObject.findByTenant(req.user.tenantId, filters)
+    const objects = await TrackedObject.findByTenant(req.user.effectiveTenantId, filters)
     res.json(objects)
   } catch (error) {
     console.error('Get objects error:', error)
@@ -519,8 +563,8 @@ app.post('/api/objects', authenticateToken, requirePermission('objects.create'),
       description,
       tags,
       customFields,
-      tenantId: req.user.tenantId,
-      createdBy: req.user.id
+      tenantId: req.user.effectiveTenantId,
+      createdBy: req.user.effectiveUserId
     }
 
     const newObject = await TrackedObject.create(objectData)
@@ -531,15 +575,15 @@ app.post('/api/objects', authenticateToken, requirePermission('objects.create'),
       newObject.lat,
       newObject.lng,
       'Initial location',
-      req.user.tenantId
+      req.user.effectiveTenantId
     )
 
     // Broadcast to WebSocket clients for this tenant only
     wss.clients.forEach(client => {
-      if (client.readyState === 1 && client.tenantId === req.user.tenantId) { // WebSocket.OPEN
+      if (client.readyState === 1 && client.tenantId === req.user.effectiveTenantId) { // WebSocket.OPEN
         client.send(JSON.stringify({
           type: 'object_created',
-          tenantId: req.user.tenantId,
+          tenantId: req.user.effectiveTenantId,
           data: newObject
         }))
       }
@@ -562,18 +606,18 @@ app.delete('/api/objects/:id', authenticateToken, requireObjectAccess('delete'),
 
     const result = await TrackedObject.delete(
       objectId, 
-      req.user.tenantId, 
-      req.user.id, 
+      req.user.effectiveTenantId, 
+      req.user.effectiveUserId, 
       req.user.role
     )
 
     if (result.success) {
       // Broadcast deletion to WebSocket clients for this tenant only
       wss.clients.forEach(client => {
-        if (client.readyState === 1 && client.tenantId === req.user.tenantId) { // WebSocket.OPEN
+        if (client.readyState === 1 && client.tenantId === req.user.effectiveTenantId) { // WebSocket.OPEN
           client.send(JSON.stringify({
             type: 'object_deleted',
-            tenantId: req.user.tenantId,
+            tenantId: req.user.effectiveTenantId,
             data: { id: objectId }
           }))
         }
@@ -598,7 +642,7 @@ app.get('/api/objects/types', authenticateToken, async (req, res) => {
        WHERE tenant_id = $1 
        GROUP BY type 
        ORDER BY count DESC, type ASC`,
-      [req.user.tenantId]
+      [req.user.effectiveTenantId]
     )
     
     const types = result.rows.map(row => ({
@@ -622,7 +666,7 @@ app.get('/api/objects/tags', authenticateToken, async (req, res) => {
        GROUP BY tag 
        ORDER BY count DESC, tag ASC 
        LIMIT 20`,
-      [req.user.tenantId]
+      [req.user.effectiveTenantId]
     )
     
     const tags = result.rows.map(row => ({
@@ -640,7 +684,7 @@ app.get('/api/objects/tags', authenticateToken, async (req, res) => {
 app.get('/api/objects/:id/locations', authenticateToken, async (req, res) => {
   try {
     const objectId = parseInt(req.params.id)
-    const history = await LocationHistory.findByObject(objectId, req.user.tenantId)
+    const history = await LocationHistory.findByObject(objectId, req.user.effectiveTenantId)
     res.json(history)
   } catch (error) {
     console.error('Get locations error:', error)
@@ -656,7 +700,7 @@ app.get('/api/object-type-configs', authenticateToken, requirePermission('types.
        FROM object_type_configs 
        WHERE tenant_id = $1 
        ORDER BY type_name ASC`,
-      [req.user.tenantId]
+      [req.user.effectiveTenantId]
     )
     
     const configs = result.rows.reduce((acc, row) => {
@@ -694,7 +738,7 @@ app.post('/api/object-type-configs', authenticateToken, requirePermission('types
        ON CONFLICT (type_name, tenant_id) 
        DO UPDATE SET emoji = $2, color = $3, updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
-      [typeName.toLowerCase(), emoji, color || '#6b7280', req.user.tenantId]
+      [typeName.toLowerCase(), emoji, color || '#6b7280', req.user.effectiveTenantId]
     )
 
     res.json({
@@ -715,7 +759,7 @@ app.delete('/api/object-type-configs/:typeName', authenticateToken, requirePermi
     const result = await query(
       `DELETE FROM object_type_configs 
        WHERE type_name = $1 AND tenant_id = $2`,
-      [typeName, req.user.tenantId]
+      [typeName, req.user.effectiveTenantId]
     )
 
     if (result.rowCount === 0) {

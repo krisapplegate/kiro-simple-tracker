@@ -4,7 +4,7 @@ This document describes the workspace (tenant) management functionality in the L
 
 ## Overview
 
-The Location Tracker supports multi-tenant architecture where users can create and access multiple workspaces. Each workspace maintains isolated data, permissions, and RBAC configurations.
+The Location Tracker supports multi-tenant architecture where users can create and access multiple workspaces. Each workspace maintains isolated data, permissions, and RBAC configurations with complete tenant isolation.
 
 ## Features
 
@@ -19,6 +19,7 @@ The Location Tracker supports multi-tenant architecture where users can create a
 - Workspace switching through tenant selector interface
 - Different roles and permissions per workspace
 - URL-based workspace routing: `/tenant/:tenantId/dashboard`
+- Real-time workspace switching with proper data isolation
 
 ### RBAC Initialization
 When a new workspace is created, the system automatically:
@@ -26,6 +27,13 @@ When a new workspace is created, the system automatically:
 - Assigns 32 granular permissions to appropriate roles
 - Creates user record for workspace creator
 - Assigns super_admin role to creator
+
+### Tenant Isolation
+- Complete data isolation between workspaces
+- Objects, users, roles, and permissions are scoped per workspace
+- API calls automatically filtered by active workspace
+- WebSocket connections are tenant-specific
+- Real-time updates only sent to relevant workspace users
 
 ## API Endpoints
 
@@ -134,6 +142,53 @@ Each workspace gets its own complete RBAC system:
 
 ## Implementation Details
 
+### Enhanced Authentication Middleware
+The authentication system supports multi-tenant context switching:
+
+```javascript
+// Auth middleware checks for tenant ID in custom header
+const authenticateToken = (req, res, next) => {
+  // Extract tenant ID from X-Tenant-Id header or URL path
+  const headerTenantId = req.headers['x-tenant-id'] ? parseInt(req.headers['x-tenant-id']) : null
+  const pathTenantId = req.params.tenantId ? parseInt(req.params.tenantId) : null
+  
+  // Verify user has access to requested tenant
+  // Use effective tenant ID for all operations
+  req.user.effectiveTenantId = effectiveTenantId
+  req.user.effectiveUserId = effectiveUserId
+}
+```
+
+### Frontend Tenant Context
+The TenantContext provides tenant-aware API helpers:
+
+```javascript
+// Helper function to get headers with tenant ID
+getApiHeaders: () => {
+  const token = localStorage.getItem('token')
+  return {
+    'Authorization': `Bearer ${token}`,
+    'X-Tenant-Id': tenantId,
+    'Content-Type': 'application/json'
+  }
+}
+```
+
+### API Tenant Isolation
+All API endpoints use effective tenant ID for data filtering:
+
+```javascript
+// Objects are filtered by effective tenant ID
+const objects = await TrackedObject.findByTenant(req.user.effectiveTenantId, filters)
+
+// Object creation uses effective tenant and user IDs
+const objectData = {
+  // ...
+  tenantId: req.user.effectiveTenantId,
+  createdBy: req.user.effectiveUserId
+}
+```
+
 ### RBACService.initializeTenantRBAC()
 Automatically creates default roles and permissions for new workspaces:
 
@@ -171,6 +226,25 @@ WebSocket connections are tenant-specific:
 - Broadcasts are filtered by tenant ID
 - Real-time updates only sent to relevant workspace users
 
+```javascript
+// WebSocket client joins tenant channel
+ws.send(JSON.stringify({ 
+  type: 'join_tenant', 
+  tenantId: currentTenantId 
+}))
+
+// Server broadcasts only to relevant tenant clients
+wss.clients.forEach(client => {
+  if (client.readyState === 1 && client.tenantId === req.user.effectiveTenantId) {
+    client.send(JSON.stringify({
+      type: 'object_created',
+      tenantId: req.user.effectiveTenantId,
+      data: newObject
+    }))
+  }
+})
+```
+
 ## Usage Examples
 
 ### Creating a Workspace via UI
@@ -207,16 +281,24 @@ curl -X POST http://localhost:3001/api/tenants \
 - Complete data isolation between workspaces
 - Users cannot access data from workspaces they don't belong to
 - API endpoints verify tenant access before returning data
+- All database queries are scoped by tenant ID
 
 ### Permission Inheritance
 - Users maintain separate roles per workspace
 - No permission inheritance between workspaces
 - Each workspace has independent RBAC configuration
+- Effective user ID is determined per workspace
 
 ### Creator Privileges
 - Workspace creators automatically get super_admin role
 - Can manage all aspects of their workspace
 - Can invite other users and assign roles
+
+### Tenant Switching Security
+- Custom X-Tenant-Id header for workspace switching
+- Server validates user access to requested workspace
+- Effective tenant ID used for all database operations
+- User permissions recalculated for target workspace
 
 ## Testing
 

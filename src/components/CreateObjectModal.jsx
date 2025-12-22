@@ -4,7 +4,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { X, MapPin, Tag, Plus, ChevronDown } from 'lucide-react'
 
 const CreateObjectModal = ({ isOpen, onClose, location }) => {
-  const { tenantId } = useTenant()
+  const { tenantId, getApiHeaders } = useTenant()
   const [formData, setFormData] = useState({
     name: '',
     type: '',
@@ -43,11 +43,8 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
   const { data: existingTypes = [] } = useQuery({
     queryKey: ['object-types', tenantId],
     queryFn: async () => {
-      const token = localStorage.getItem('token')
       const response = await fetch('/api/objects/types', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       if (!response.ok) return []
       return response.json()
@@ -59,11 +56,8 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
   const { data: typeConfigs = {} } = useQuery({
     queryKey: ['object-type-configs', tenantId],
     queryFn: async () => {
-      const token = localStorage.getItem('token')
       const response = await fetch('/api/object-type-configs', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       if (!response.ok) return {}
       return response.json()
@@ -101,14 +95,9 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
 
   const createObjectMutation = useMutation({
     mutationFn: async (objectData) => {
-      const token = localStorage.getItem('token')
-      
       const response = await fetch('/api/objects', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify(objectData)
       })
       
@@ -134,14 +123,9 @@ const CreateObjectModal = ({ isOpen, onClose, location }) => {
 
   const saveTypeConfigMutation = useMutation({
     mutationFn: async ({ typeName, emoji, color }) => {
-      const token = localStorage.getItem('token')
-      
       const response = await fetch('/api/object-type-configs', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({ typeName, emoji, color })
       })
       

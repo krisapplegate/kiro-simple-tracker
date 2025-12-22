@@ -65,18 +65,15 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingObject, setEditingObject] = useState(null)
   const { user } = useAuth()
-  const { tenantId } = useTenant()
+  const { tenantId, getApiHeaders } = useTenant()
   const queryClient = useQueryClient()
 
   // Fetch object type configurations
   const { data: typeConfigs = {} } = useQuery({
     queryKey: ['object-type-configs', tenantId],
     queryFn: async () => {
-      const token = localStorage.getItem('token')
       const response = await fetch('/api/object-type-configs', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       if (!response.ok) throw new Error('Failed to fetch object type configs')
       return response.json()
@@ -98,12 +95,9 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
   // Delete object mutation
   const deleteObjectMutation = useMutation({
     mutationFn: async (objectId) => {
-      const token = localStorage.getItem('token')
       const response = await fetch(`/api/objects/${objectId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       
       if (!response.ok) {
@@ -159,11 +153,8 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
       if (filters.objectTypes.length) params.append('types', filters.objectTypes.join(','))
       if (filters.tags.length) params.append('tags', filters.tags.join(','))
       
-      const token = localStorage.getItem('token')
       const response = await fetch(`/api/objects?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       if (!response.ok) throw new Error('Failed to fetch objects')
       return response.json()

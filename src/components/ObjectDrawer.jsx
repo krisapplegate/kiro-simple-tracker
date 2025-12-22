@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
+import { useTenant } from '../contexts/TenantContext'
 import { 
   X, 
   MapPin, 
@@ -18,6 +19,7 @@ const ObjectDrawer = ({ object, onClose }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const { user } = useAuth()
+  const { getApiHeaders } = useTenant()
   const queryClient = useQueryClient()
 
   // Fetch object location history
@@ -25,11 +27,8 @@ const ObjectDrawer = ({ object, onClose }) => {
     queryKey: ['object-history', object?.id],
     queryFn: async () => {
       if (!object?.id) return []
-      const token = localStorage.getItem('token')
       const response = await fetch(`/api/objects/${object.id}/locations`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       if (!response.ok) throw new Error('Failed to fetch location history')
       return response.json()
@@ -40,12 +39,9 @@ const ObjectDrawer = ({ object, onClose }) => {
   // Delete object mutation
   const deleteObjectMutation = useMutation({
     mutationFn: async (objectId) => {
-      const token = localStorage.getItem('token')
       const response = await fetch(`/api/objects/${objectId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       
       if (!response.ok) {

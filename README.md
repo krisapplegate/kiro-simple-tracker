@@ -5,8 +5,8 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 ## Features
 
 - **Real-time Location Tracking**: Track objects with live position updates
-- **Multi-tenant Architecture**: Isolated data per tenant with role-based access control
-- **Workspace Management**: Create and manage multiple workspaces with automatic RBAC initialization
+- **Multi-tenant Architecture**: Isolated data per tenant with role-based access control and complete tenant isolation
+- **Workspace Management**: Create and manage multiple workspaces with automatic RBAC initialization and real-time switching
 - **Role-Based Access Control (RBAC)**: Comprehensive permission system with 6 roles and 32 granular permissions
 - **RBAC Management Interface**: Complete frontend for managing users, roles, groups, and permissions
 - **Interactive Map Interface**: Leaflet-based map with custom emoji markers and enhanced tooltips
@@ -19,7 +19,7 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 - **RBAC Administration Panel**: Complete UI for managing users, roles, groups, and permissions (accessible via /admin)
 - **Permission-Based Actions**: Granular access control for all application resources
 - **Responsive Design**: Works on desktop, tablet, and mobile devices
-- **Real-time Updates**: WebSocket integration for live data synchronization
+- **Real-time Updates**: WebSocket integration for live data synchronization with tenant-specific channels
 
 ## Tech Stack
 
@@ -350,10 +350,12 @@ npm run build
 - [x] PostgreSQL database integration with connection pooling
 - [x] Docker containerization for development and production
 - [x] Multi-tenant architecture with role-based permissions
+- [x] Complete tenant isolation with workspace switching
 - [x] Workspace creation with automatic RBAC initialization
 - [x] Multi-tenant user access and workspace switching
+- [x] Tenant-aware API calls with X-Tenant-Id header support
 - [x] Comprehensive RBAC system with 6 roles and 32 permissions
-- [x] Real-time WebSocket updates for live synchronization
+- [x] Real-time WebSocket updates with tenant-specific channels
 - [x] Location history tracking and visualization
 - [x] Object ownership and permission-based deletion
 - [x] Dynamic object type selection with emoji icons and usage statistics

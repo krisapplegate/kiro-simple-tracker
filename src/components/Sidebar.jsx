@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 
 const Sidebar = ({ open, filters, setFilters }) => {
-  const { tenantId } = useTenant()
+  const { tenantId, getApiHeaders } = useTenant()
   const [expandedSections, setExpandedSections] = useState({
     timeRange: true,
     objectTypes: true,
@@ -40,11 +40,8 @@ const Sidebar = ({ open, filters, setFilters }) => {
   const { data: existingTypes = [] } = useQuery({
     queryKey: ['object-types', tenantId],
     queryFn: async () => {
-      const token = localStorage.getItem('token')
       const response = await fetch('/api/objects/types', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       if (!response.ok) return []
       return response.json()
@@ -76,11 +73,8 @@ const Sidebar = ({ open, filters, setFilters }) => {
   const { data: existingTags = [] } = useQuery({
     queryKey: ['object-tags', tenantId],
     queryFn: async () => {
-      const token = localStorage.getItem('token')
       const response = await fetch('/api/objects/tags', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       })
       if (!response.ok) return []
       return response.json()
