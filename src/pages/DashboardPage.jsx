@@ -4,9 +4,12 @@ import Sidebar from '../components/Sidebar'
 import MapView from '../components/MapView'
 import ObjectDrawer from '../components/ObjectDrawer'
 import CreateObjectModal from '../components/CreateObjectModal'
+import TenantTabs from '../components/TenantTabs'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useTenant } from '../contexts/TenantContext'
 
 const DashboardPage = () => {
+  const { currentTenant, tenantUser } = useTenant()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selectedObject, setSelectedObject] = useState(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -40,14 +43,15 @@ const DashboardPage = () => {
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <Navbar 
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-      />
-      
-      <div className="flex-1 flex overflow-hidden">
-        {/* Desktop Sidebar */}
+    <TenantTabs>
+      <div className="h-full flex flex-col">
+        <Navbar 
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+        />
+        
+        <div className="flex-1 flex overflow-hidden">
+          {/* Desktop Sidebar */}
         <div className="hidden lg:block">
           <Sidebar 
             open={sidebarOpen}
@@ -99,11 +103,8 @@ const DashboardPage = () => {
       }`}>
         {isConnected ? 'Connected' : 'Disconnected'}
       </div>
-
-
-
-
-    </div>
+      </div>
+    </TenantTabs>
   )
 }
 

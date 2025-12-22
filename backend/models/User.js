@@ -28,6 +28,96 @@ export class User {
     }
   }
 
+  // New method: Get all tenants a user has access to
+  static async getUserTenants(userId) {
+    try {
+      // Get tenants where user has direct access or through roles
+      const result = await query(
+        `SELECT DISTINCT t.id, t.name, t.created_at,
+                u.role as user_role,
+                COALESCE(
+                  json_agg(
+                    DISTINCT json_build_object(
+                      'id', r.id,
+                      'name', r.name,
+                      'display_name', r.display_name
+                    )
+                  ) FILTER (WHERE r.id IS NOT NULL), 
+                  '[]'
+                ) as roles
+         FROM tenants t
+         JOIN users u ON t.id = u.tenant_id
+         LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.user_id = $1
+         LEFT JOIN roles r ON ur.role_id = r.id AND r.tenant_id = t.id
+         WHERE u.id = $1
+         GROUP BY t.id, t.name, t.created_at, u.role
+         ORDER BY t.name ASC`,
+        [userId]
+      )
+      
+      return result.rows
+    } catch (error) {
+      console.log('Error getting user tenants, falling back to simple query:', error.message)
+      // Fallback: just get the user's primary tenant
+      const result = await query(
+        `SELECT t.id, t.name, t.created_at, u.role as user_role, '[]'::json as roles
+         FROM tenants t
+         JOIN users u ON t.id = u.tenant_id
+         WHERE u.id = $1`,
+        [userId]
+      )
+      
+      return result.rows
+    }
+  }
+
+  // New method: Get user info for a specific tenant
+  static async findByIdAndTenant(userId, tenantId) {
+    try {
+      const result = await query(
+        `SELECT u.id, u.email, u.role, u.created_at,
+                t.id as tenant_id, t.name as tenant_name,
+                COALESCE(
+                  json_agg(
+                    json_build_object(
+                      'id', r.id,
+                      'name', r.name,
+                      'display_name', r.display_name
+                    )
+                  ) FILTER (WHERE r.id IS NOT NULL), 
+                  '[]'
+                ) as roles
+         FROM users u
+         JOIN tenants t ON u.tenant_id = $2
+         LEFT JOIN user_roles ur ON u.id = ur.user_id
+         LEFT JOIN roles r ON ur.role_id = r.id AND r.tenant_id = $2
+         WHERE u.id = $1 AND u.tenant_id = $2
+         GROUP BY u.id, u.email, u.role, u.created_at, t.id, t.name`,
+        [userId, tenantId]
+      )
+      
+      if (result.rows.length === 0) {
+        return null
+      }
+      
+      const user = result.rows[0]
+      return {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        tenant: {
+          id: user.tenant_id,
+          name: user.tenant_name
+        },
+        roles: user.roles,
+        created_at: user.created_at
+      }
+    } catch (error) {
+      console.log('Error getting user by tenant, falling back:', error.message)
+      return null
+    }
+  }
+
   static async findById(id) {
     const result = await query(
       `SELECT u.*, t.name as tenant_name 

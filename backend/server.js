@@ -5,6 +5,7 @@ import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
 import dotenv from 'dotenv'
 import { User } from './models/User.js'
+import { Tenant } from './models/Tenant.js'
 import { TrackedObject } from './models/TrackedObject.js'
 import { LocationHistory } from './models/LocationHistory.js'
 import { query } from './database.js'
@@ -139,6 +140,91 @@ app.get('/api/auth/validate', authenticateToken, async (req, res) => {
     })
   } catch (error) {
     console.error('Validate error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Tenant Management Routes
+
+// Get all tenants user has access to
+app.get('/api/tenants', authenticateToken, async (req, res) => {
+  try {
+    const tenants = await User.getUserTenants(req.user.id)
+    res.json(tenants)
+  } catch (error) {
+    console.error('Get user tenants error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get specific tenant info
+app.get('/api/tenants/:tenantId', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    // Verify user has access to this tenant
+    const userTenants = await User.getUserTenants(req.user.id)
+    const hasAccess = userTenants.some(t => t.id === tenantId)
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied to this tenant' })
+    }
+    
+    const tenant = await Tenant.findById(tenantId)
+    if (!tenant) {
+      return res.status(404).json({ message: 'Tenant not found' })
+    }
+    
+    const stats = await Tenant.getStats(tenantId)
+    
+    res.json({
+      ...tenant,
+      stats
+    })
+  } catch (error) {
+    console.error('Get tenant error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get user info for specific tenant (for tenant switching)
+app.get('/api/tenants/:tenantId/user', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    const user = await User.findByIdAndTenant(req.user.id, tenantId)
+    if (!user) {
+      return res.status(403).json({ message: 'Access denied to this tenant' })
+    }
+    
+    // Get permissions for this tenant
+    const permissions = await RBACService.getUserPermissions(user.id, tenantId)
+    const roles = await RBACService.getUserRoles(user.id, tenantId)
+    
+    res.json({
+      ...user,
+      permissions,
+      roles
+    })
+  } catch (error) {
+    console.error('Get tenant user error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new tenant (admin only)
+app.post('/api/tenants', authenticateToken, requirePermission('tenants.create'), async (req, res) => {
+  try {
+    const { name } = req.body
+    
+    if (!name) {
+      return res.status(400).json({ message: 'Tenant name is required' })
+    }
+    
+    const tenant = await Tenant.create({ name })
+    res.status(201).json(tenant)
+  } catch (error) {
+    console.error('Create tenant error:', error)
     res.status(500).json({ message: 'Server error' })
   }
 })
