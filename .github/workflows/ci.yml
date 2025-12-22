@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: location_tracker_test
+          POSTGRES_USER: tracker_user
+          POSTGRES_PASSWORD: tracker_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install PostgreSQL client
+      run: sudo apt-get update && sudo apt-get install -y postgresql-client
+    
+    - name: Wait for PostgreSQL
+      run: |
+        timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U tracker_user; do sleep 1; done'
+      env:
+        PGPASSWORD: tracker_password
+    
+    - name: Setup test database
+      run: |
+        PGPASSWORD=tracker_password psql -h localhost -U tracker_user -d location_tracker_test -f database/init.sql
+      env:
+        PGPASSWORD: tracker_password
+    
+    - name: Run unit tests
+      run: npm run test:unit
+    
+    - name: Start backend for API tests
+      run: |
+        npm run dev:backend &
+        BACKEND_PID=$!
+        echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
+        
+        # Wait for backend to be ready
+        timeout 60 bash -c 'until curl -f http://localhost:3001/api/health; do sleep 2; done'
+      env:
+        NODE_ENV: test
+        JWT_SECRET: test-jwt-secret-key-for-ci
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: location_tracker_test
+        DB_USER: tracker_user
+        DB_PASSWORD: tracker_password
+    
+    - name: Run API tests
+      run: npm run test:api
+      env:
+        NODE_ENV: test
+        JWT_SECRET: test-jwt-secret-key-for-ci
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: location_tracker_test
+        DB_USER: tracker_user
+        DB_PASSWORD: tracker_password
+    
+    - name: Test RBAC system
+      run: |
+        echo "Testing RBAC system..."
+        
+        # Test admin login
+        TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token' 2>/dev/null || echo "")
+        
+        if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+          echo "❌ Failed to authenticate admin"
+          exit 1
+        fi
+        
+        # Check if we can access protected endpoints
+        curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate > /dev/null || {
+          echo "❌ Failed to validate token"
+          exit 1
+        }
+        
+        curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/roles > /dev/null || {
+          echo "❌ Failed to access roles endpoint"
+          exit 1
+        }
+        
+        echo "✅ RBAC system is working"
+    
+    - name: Stop backend server
+      if: always()
+      run: |
+        if [ ! -z "$BACKEND_PID" ]; then
+          kill $BACKEND_PID || true
+        fi
+    
+    - name: Run security audit
+      run: npm audit --audit-level moderate
+      continue-on-error: true
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Check code formatting
+      run: |
+        # Basic syntax check for JavaScript files
+        find . -name "*.js" -not -path "./node_modules/*" -exec node -c {} \;
+        echo "✅ JavaScript syntax check passed"
+    
+    - name: Check for common issues
+      run: |
+        # Check for console.log statements (should be removed in production)
+        if grep -r "console\.log" src/ backend/ --include="*.js" --include="*.jsx"; then
+          echo "⚠️ Found console.log statements - consider removing for production"
+        else
+          echo "✅ No console.log statements found"
+        fi
+        
+        # Check for TODO comments
+        if grep -r "TODO\|FIXME" src/ backend/ --include="*.js" --include="*.jsx"; then
+          echo "ℹ️ Found TODO/FIXME comments"
+        fi
+      continue-on-error: true
