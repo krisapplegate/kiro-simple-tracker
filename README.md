@@ -5,14 +5,16 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 ## Features
 
 - **Real-time Location Tracking**: Track objects with live position updates
-- **Multi-tenant Architecture**: Isolated data per tenant with role-based access
-- **Interactive Map Interface**: Leaflet-based map with custom markers and enhanced tooltips
+- **Multi-tenant Architecture**: Isolated data per tenant with role-based access control
+- **Role-Based Access Control (RBAC)**: Comprehensive permission system with 6 roles and 32 granular permissions
+- **Interactive Map Interface**: Leaflet-based map with custom emoji markers and enhanced tooltips
 - **Enhanced Map Tooltips**: Status display, object details, and action buttons directly on map popups
 - **Filtering & Search**: Filter by object type, time range, tags, and proximity
 - **Object Management**: Create, edit, and delete tracked objects with permission-based access
-- **Dynamic Object Types**: Choose from existing types or create custom types with usage statistics
+- **Dynamic Object Types**: Choose from existing types or create custom types with emoji icons and usage statistics
 - **Location History**: View historical movement data for each object
-- **Permission-Based Actions**: Role-based delete permissions (admin or object creator)
+- **User & Group Management**: Organize users into groups with role-based permissions
+- **Permission-Based Actions**: Granular access control for all application resources
 - **Responsive Design**: Works on desktop, tablet, and mobile devices
 - **Real-time Updates**: WebSocket integration for live data synchronization
 
@@ -31,16 +33,18 @@ A multi-tenant location tracking application built with React, Node.js, PostgreS
 - Node.js with Express
 - PostgreSQL database with connection pooling
 - JWT authentication with bcrypt password hashing
+- Role-Based Access Control (RBAC) with 32 granular permissions
 - WebSocket for real-time updates
-- Database models for Users, Objects, and Location History
+- Database models for Users, Objects, Location History, Roles, and Permissions
 - CORS enabled for cross-origin requests
 
 ### Database
 - PostgreSQL 15 with optimized indexes
-- Multi-tenant data isolation
+- Multi-tenant data isolation with RBAC
+- Role-based permission system with groups
 - Location history tracking
 - JSON fields for flexible custom data
-- Automated schema initialization
+- Automated schema initialization and migrations
 
 ## Getting Started
 
@@ -93,9 +97,17 @@ cp .env.example .env
 npm run dev
 ```
 
-### Demo Credentials
-- Email: `admin@demo.com`
-- Password: `password`
+### Demo Credentials & Roles
+- **Super Admin**: `admin@demo.com` / `password` (Full system access)
+- **Test Users**: Create additional users with different roles for testing
+
+### Default Role Hierarchy
+1. **Super Administrator** - Full system access (32 permissions)
+2. **Administrator** - Full management except system admin (31 permissions)  
+3. **Manager** - Team and object oversight (16 permissions)
+4. **Operator** - Object and type management (12 permissions)
+5. **Viewer** - Read-only access (7 permissions)
+6. **User** - Basic object access for own objects (6 permissions)
 
 ## Project Structure
 
@@ -120,6 +132,10 @@ npm run dev
 ├── backend/               # Backend Node.js application
 │   ├── server.js         # Express server with API routes and WebSocket
 │   ├── database.js       # PostgreSQL connection and query helpers
+│   ├── services/         # Business logic services
+│   │   └── RBACService.js # Role-based access control service
+│   ├── middleware/       # Express middleware
+│   │   └── rbac.js       # RBAC permission checking middleware
 │   └── models/           # Database models
 │       ├── User.js       # User authentication and management
 │       ├── TrackedObject.js # Object tracking with ownership
@@ -128,6 +144,8 @@ npm run dev
 │   ├── init.sql         # Database schema and initial data
 │   ├── manage.js        # Database management CLI
 │   ├── migrate_add_created_by.sql # Migration for object ownership
+│   ├── migrate_add_object_type_configs.sql # Migration for emoji icons
+│   ├── migrate_add_rbac.sql # Migration for RBAC system
 │   └── scripts/         # Database migration scripts
 ├── docker-compose.yml    # Development Docker setup
 ├── docker-compose.prod.yml # Production Docker setup
@@ -143,13 +161,30 @@ npm run dev
 - `GET /api/auth/validate` - Validate JWT token
 
 ### Objects
-- `GET /api/objects` - Get tracked objects (with filtering)
-- `POST /api/objects` - Create new tracked object
-- `PUT /api/objects/:id` - Update object (owner or admin only)
-- `DELETE /api/objects/:id` - Delete object (owner or admin only)
+- `GET /api/objects` - Get tracked objects (requires `objects.read` permission)
+- `POST /api/objects` - Create new tracked object (requires `objects.create` permission)
+- `PUT /api/objects/:id` - Update object (requires `objects.update` permission + ownership)
+- `DELETE /api/objects/:id` - Delete object (requires `objects.delete` permission + ownership)
 - `GET /api/objects/types` - Get existing object types with usage counts
 - `GET /api/objects/tags` - Get existing tags with usage counts
 - `GET /api/objects/:id/locations` - Get location history for object
+
+### RBAC (Role-Based Access Control)
+- `GET /api/rbac/roles` - List all roles with permissions (requires `roles.read`)
+- `POST /api/rbac/roles` - Create new role (requires `roles.create`)
+- `GET /api/rbac/permissions` - List all available permissions (requires `roles.read`)
+- `GET /api/rbac/groups` - List all groups with members (requires `groups.read`)
+- `POST /api/rbac/groups` - Create new group (requires `groups.create`)
+- `POST /api/rbac/users/:id/roles` - Assign role to user (requires `users.manage`)
+- `DELETE /api/rbac/users/:id/roles/:roleId` - Remove role from user (requires `users.manage`)
+- `POST /api/rbac/groups/:id/users` - Add user to group (requires `groups.update`)
+- `DELETE /api/rbac/groups/:id/users/:userId` - Remove user from group (requires `groups.update`)
+- `GET /api/rbac/users/:id` - Get user permissions and roles (requires `users.manage`)
+
+### Object Type Configurations
+- `GET /api/object-type-configs` - Get emoji and color configurations (requires `types.read`)
+- `POST /api/object-type-configs` - Create/update type configuration (requires `types.create`)
+- `DELETE /api/object-type-configs/:typeName` - Delete type configuration (requires `types.delete`)
 
 ### WebSocket Events
 - `location_update` - Real-time location updates
@@ -274,28 +309,33 @@ npm run build
 - [x] PostgreSQL database integration with connection pooling
 - [x] Docker containerization for development and production
 - [x] Multi-tenant architecture with role-based permissions
+- [x] Comprehensive RBAC system with 6 roles and 32 permissions
 - [x] Real-time WebSocket updates for live synchronization
 - [x] Location history tracking and visualization
 - [x] Object ownership and permission-based deletion
-- [x] Dynamic object type selection with usage statistics
+- [x] Dynamic object type selection with emoji icons and usage statistics
 - [x] Enhanced map tooltips with status and action buttons
 - [x] Comprehensive object management (create, edit, delete)
 - [x] Real-time sidebar updates and filtering
+- [x] User and group management with role assignments
+- [x] Permission-based API endpoint protection
 
 ### In Progress 🚧
+- [ ] Frontend UI for RBAC management (role/group administration)
 - [ ] Complete edit functionality with backend API integration
 - [ ] Advanced filtering (geofencing, custom date ranges)
 - [ ] Bulk object import/export functionality
 - [ ] Advanced analytics and reporting
 
 ### Planned 📋
-- [ ] Email/SMS notifications
+- [ ] Audit logging for security and compliance
+- [ ] Email/SMS notifications for alerts
 - [ ] Mobile app (React Native)
 - [ ] Multi-language support
 - [ ] Dark mode theme
 - [ ] API rate limiting
-- [ ] Audit logging
-- [ ] Advanced user management
+- [ ] Advanced user management dashboard
+- [ ] Custom permission creation
 
 ## Troubleshooting
 
@@ -307,11 +347,29 @@ npm run build
 5. Try clicking the map or the floating + button
 6. Check network tab for failed API requests
 
-### Object Actions Not Working
-1. **Can't see delete button**: Only admins and object creators can delete objects
-2. **Edit button not working**: Edit modal should open - check browser console for errors
-3. **Map tooltip actions**: Click Edit/Delete buttons in map popups for quick actions
-4. **ObjectDrawer not visible**: Check z-index issues - drawer should appear on right side
+### RBAC and Permission Issues
+1. **Access denied errors**: Check user roles and permissions with `/api/rbac/users/:id`
+2. **Can't see admin features**: Only users with appropriate permissions can access management features
+3. **Object access denied**: Users can only modify objects they created unless they have `objects.manage` permission
+4. **Type configuration errors**: Requires `types.create/update/delete` permissions
+5. **User management restricted**: Only users with `users.manage` permission can modify other users
+
+### Testing RBAC System
+```bash
+# Test different user roles
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+
+# Check user permissions
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq '.permissions'
+
+# List all roles
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/roles | jq
+
+# Test permission-protected endpoint
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/objects | jq
+```
 
 ### Database Issues
 - **Connection errors**: Check if database container is running

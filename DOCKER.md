@@ -72,13 +72,15 @@ NODE_ENV=production
 - **Production**: Node.js production server with PM2 process management
 - **Port**: 3001
 - **Database**: PostgreSQL connection with connection pooling
-- **Features**: JWT authentication, WebSocket support, permission-based APIs
+- **Features**: JWT authentication, RBAC system, WebSocket support, permission-based APIs
+- **RBAC**: 32 granular permissions across 6 resources with role-based access control
 
 ### Database Container
 - **Image**: PostgreSQL 15 Alpine
 - **Port**: 5432
 - **Storage**: Persistent volumes for data
-- **Initialization**: Automatic schema setup
+- **Initialization**: Automatic schema setup with RBAC system
+- **Features**: Multi-tenant isolation, role-based permissions, audit trails
 
 ## Useful Commands
 
@@ -108,6 +110,17 @@ docker-compose exec database psql -U tracker_user -d location_tracker
 node database/manage.js stats
 node database/manage.js listUsers
 node database/manage.js createUser user@example.com password123
+
+# Test RBAC system
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+
+# Check user permissions
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq '.permissions'
+
+# List roles and permissions
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/roles | jq
 ```
 
 ## Network Configuration
@@ -184,13 +197,23 @@ docker-compose up --build
 curl http://localhost:3001/api/health
 curl http://localhost:3001/api/objects
 
+# Test RBAC endpoints (requires authentication)
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/roles | jq
+
 # Check WebSocket connection
 # Look for "WebSocket connected" in browser console
 
-# Test object creation
+# Test object creation (requires objects.create permission)
 # Click on map or use + button
 
-# Check permissions
+# Check user permissions
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq '.permissions'
+
+# Verify RBAC system
 node database/manage.js listUsers
 ```
 

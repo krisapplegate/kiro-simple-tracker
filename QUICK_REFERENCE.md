@@ -12,7 +12,34 @@ cd location-tracker
 open http://localhost:3000
 ```
 
-**Demo Login:** `admin@demo.com` / `password`
+**Demo Login:** `admin@demo.com` / `password` (Super Administrator)
+
+## 🔐 RBAC System
+
+### Default Roles & Permissions
+- **Super Admin** (32 permissions): Full system access
+- **Admin** (31 permissions): Full management except system admin
+- **Manager** (16 permissions): Team and object oversight  
+- **Operator** (12 permissions): Object and type management
+- **Viewer** (7 permissions): Read-only access
+- **User** (6 permissions): Basic object access for own objects
+
+### Quick RBAC Commands
+```bash
+# Test user permissions
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+
+# Check permissions
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq '.permissions'
+
+# List roles
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/roles | jq
+
+# List groups  
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/groups | jq
+```
 
 ## 🐳 Docker Commands
 
@@ -75,13 +102,27 @@ npm run build
 - `GET /api/auth/validate` - Validate token
 
 ### Objects
-- `GET /api/objects` - List objects (with filters)
-- `POST /api/objects` - Create object
-- `PUT /api/objects/:id` - Update object (owner/admin only)
-- `DELETE /api/objects/:id` - Delete object (owner/admin only)
+- `GET /api/objects` - List objects (requires `objects.read`)
+- `POST /api/objects` - Create object (requires `objects.create`)
+- `PUT /api/objects/:id` - Update object (requires `objects.update` + ownership)
+- `DELETE /api/objects/:id` - Delete object (requires `objects.delete` + ownership)
 - `GET /api/objects/types` - Get existing object types with usage counts
 - `GET /api/objects/tags` - Get existing tags with usage counts
 - `GET /api/objects/:id/locations` - Location history
+
+### RBAC Management
+- `GET /api/rbac/roles` - List roles (requires `roles.read`)
+- `POST /api/rbac/roles` - Create role (requires `roles.create`)
+- `GET /api/rbac/permissions` - List permissions (requires `roles.read`)
+- `GET /api/rbac/groups` - List groups (requires `groups.read`)
+- `POST /api/rbac/groups` - Create group (requires `groups.create`)
+- `POST /api/rbac/users/:id/roles` - Assign role (requires `users.manage`)
+- `GET /api/rbac/users/:id` - Get user RBAC info (requires `users.manage`)
+
+### Type Configurations
+- `GET /api/object-type-configs` - Get emoji configs (requires `types.read`)
+- `POST /api/object-type-configs` - Create/update config (requires `types.create`)
+- `DELETE /api/object-type-configs/:type` - Delete config (requires `types.delete`)
 
 ### Health
 - `GET /api/health` - Application health
@@ -172,18 +213,19 @@ VITE_API_URL=http://localhost:3001
 
 ## 📱 Usage
 
-1. **Login** with demo credentials (`admin@demo.com` / `password`)
-2. **Click map** to create objects at specific locations
-3. **Choose from existing types** or create custom types with usage counts
+1. **Login** with demo credentials (`admin@demo.com` / `password` - Super Administrator)
+2. **Click map** to create objects at specific locations (requires `objects.create`)
+3. **Choose from existing types** or create custom types with emoji icons (requires `types.create`)
 4. **Use sidebar** to filter objects by type, tags, or time range
 5. **Click objects on map** to see enhanced tooltips with:
    - Color-coded status badges (active/warning/critical)
    - Object details (type, description, tags, last updated)
-   - Action buttons (View Details, Edit, Delete)
+   - Action buttons (View Details, Edit, Delete - permission-based)
 6. **Use ObjectDrawer** for detailed view and management
-7. **Delete objects** you created (admins can delete any object)
+7. **Delete objects** you created or have `objects.manage` permission
 8. **Real-time updates** via WebSocket for live synchronization
-9. **Edit objects** directly from map tooltips or ObjectDrawer
+9. **Edit objects** directly from map tooltips or ObjectDrawer (requires `objects.update`)
+10. **Manage users and roles** if you have admin permissions (`users.manage`, `roles.manage`)
 
 ## 🆘 Common Issues
 
@@ -192,12 +234,15 @@ VITE_API_URL=http://localhost:3001
 | Port in use | `./docker-start.sh stop` |
 | Database error | `./docker-start.sh health` |
 | "created_by column does not exist" | `./docker-start.sh migrate` |
-| Can't create objects | Check browser console, try map click or + button |
+| Can't create objects | Check `objects.create` permission, try map click or + button |
 | Authentication failed | Clear localStorage and re-login |
 | Map not loading | Check internet connection for tiles |
 | ObjectDrawer not visible | Check for z-index issues, should appear on right |
-| Edit/Delete buttons missing | Only owners/admins see delete, check permissions |
+| Edit/Delete buttons missing | Check user permissions and object ownership |
 | Map tooltips not working | Click objects on map to see enhanced popups |
+| Access denied errors | Check user roles with `/api/rbac/users/:id` |
+| Permission errors | Verify user has required permission for action |
+| RBAC not working | Check if user has proper role assignments |
 
 ## 📞 Support
 
