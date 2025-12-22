@@ -8,6 +8,13 @@ import { User } from './models/User.js'
 import { TrackedObject } from './models/TrackedObject.js'
 import { LocationHistory } from './models/LocationHistory.js'
 import { query } from './database.js'
+import { RBACService } from './services/RBACService.js'
+import { 
+  requirePermission, 
+  requireObjectAccess, 
+  requireUserManagement,
+  attachPermissions 
+} from './middleware/rbac.js'
 
 dotenv.config()
 
@@ -22,7 +29,7 @@ app.use(express.json())
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
 
-// Auth middleware
+// Auth middleware with RBAC
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization']
   const token = authHeader && authHeader.split(' ')[1]
@@ -31,11 +38,23 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ message: 'Access token required' })
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) {
       return res.status(403).json({ message: 'Invalid token' })
     }
+    
     req.user = user
+    
+    // Attach permissions and roles to user
+    try {
+      req.user.permissions = await RBACService.getUserPermissions(user.id, user.tenantId)
+      req.user.roles = await RBACService.getUserRoles(user.id, user.tenantId)
+    } catch (error) {
+      console.error('Error loading user permissions:', error)
+      req.user.permissions = []
+      req.user.roles = []
+    }
+    
     next()
   })
 }
@@ -114,7 +133,9 @@ app.get('/api/auth/validate', authenticateToken, async (req, res) => {
       id: user.id,
       email: user.email,
       role: user.role,
-      tenant: user.tenant
+      tenant: user.tenant,
+      permissions: req.user.permissions || [],
+      roles: req.user.roles || []
     })
   } catch (error) {
     console.error('Validate error:', error)
@@ -122,8 +143,143 @@ app.get('/api/auth/validate', authenticateToken, async (req, res) => {
   }
 })
 
+// RBAC Routes
+
+// Get all roles for tenant
+app.get('/api/rbac/roles', authenticateToken, requirePermission('roles.read'), async (req, res) => {
+  try {
+    const roles = await RBACService.getRoles(req.user.tenantId)
+    res.json(roles)
+  } catch (error) {
+    console.error('Get roles error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new role
+app.post('/api/rbac/roles', authenticateToken, requirePermission('roles.create'), async (req, res) => {
+  try {
+    const role = await RBACService.createRole(req.body, req.user.tenantId, req.user.id)
+    res.status(201).json(role)
+  } catch (error) {
+    console.error('Create role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get all permissions
+app.get('/api/rbac/permissions', authenticateToken, requirePermission('roles.read'), async (req, res) => {
+  try {
+    const permissions = await RBACService.getPermissions()
+    res.json(permissions)
+  } catch (error) {
+    console.error('Get permissions error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get all groups for tenant
+app.get('/api/rbac/groups', authenticateToken, requirePermission('groups.read'), async (req, res) => {
+  try {
+    const groups = await RBACService.getGroups(req.user.tenantId)
+    res.json(groups)
+  } catch (error) {
+    console.error('Get groups error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new group
+app.post('/api/rbac/groups', authenticateToken, requirePermission('groups.create'), async (req, res) => {
+  try {
+    const group = await RBACService.createGroup(req.body, req.user.tenantId, req.user.id)
+    res.status(201).json(group)
+  } catch (error) {
+    console.error('Create group error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Assign role to user
+app.post('/api/rbac/users/:userId/roles', authenticateToken, requireUserManagement(), async (req, res) => {
+  try {
+    const { roleId } = req.body
+    const userId = parseInt(req.params.userId)
+    
+    const assignment = await RBACService.assignRoleToUser(userId, roleId, req.user.id)
+    res.json(assignment)
+  } catch (error) {
+    console.error('Assign role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Remove role from user
+app.delete('/api/rbac/users/:userId/roles/:roleId', authenticateToken, requireUserManagement(), async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId)
+    const roleId = parseInt(req.params.roleId)
+    
+    const success = await RBACService.removeRoleFromUser(userId, roleId)
+    if (success) {
+      res.json({ message: 'Role removed successfully' })
+    } else {
+      res.status(404).json({ message: 'Role assignment not found' })
+    }
+  } catch (error) {
+    console.error('Remove role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Add user to group
+app.post('/api/rbac/groups/:groupId/users', authenticateToken, requirePermission('groups.update'), async (req, res) => {
+  try {
+    const { userId } = req.body
+    const groupId = parseInt(req.params.groupId)
+    
+    const assignment = await RBACService.addUserToGroup(userId, groupId, req.user.id)
+    res.json(assignment)
+  } catch (error) {
+    console.error('Add user to group error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Remove user from group
+app.delete('/api/rbac/groups/:groupId/users/:userId', authenticateToken, requirePermission('groups.update'), async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId)
+    const groupId = parseInt(req.params.groupId)
+    
+    const success = await RBACService.removeUserFromGroup(userId, groupId)
+    if (success) {
+      res.json({ message: 'User removed from group successfully' })
+    } else {
+      res.status(404).json({ message: 'User group assignment not found' })
+    }
+  } catch (error) {
+    console.error('Remove user from group error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get user's permissions and roles
+app.get('/api/rbac/users/:userId', authenticateToken, requireUserManagement(), async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId)
+    const permissions = await RBACService.getUserPermissions(userId, req.user.tenantId)
+    const roles = await RBACService.getUserRoles(userId, req.user.tenantId)
+    
+    res.json({ permissions, roles })
+  } catch (error) {
+    console.error('Get user RBAC info error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
 // Object routes
-app.get('/api/objects', authenticateToken, async (req, res) => {
+app.get('/api/objects', authenticateToken, requirePermission('objects.read'), async (req, res) => {
   try {
     const { timeRange, types, tags } = req.query
     
@@ -146,7 +302,7 @@ app.get('/api/objects', authenticateToken, async (req, res) => {
   }
 })
 
-app.post('/api/objects', authenticateToken, async (req, res) => {
+app.post('/api/objects', authenticateToken, requirePermission('objects.create'), async (req, res) => {
   try {
     const { name, type, lat, lng, description, tags, customFields } = req.body
 
@@ -194,7 +350,7 @@ app.post('/api/objects', authenticateToken, async (req, res) => {
   }
 })
 
-app.delete('/api/objects/:id', authenticateToken, async (req, res) => {
+app.delete('/api/objects/:id', authenticateToken, requireObjectAccess('delete'), async (req, res) => {
   try {
     const objectId = parseInt(req.params.id)
     
@@ -290,7 +446,7 @@ app.get('/api/objects/:id/locations', authenticateToken, async (req, res) => {
 })
 
 // Object Type Configuration endpoints
-app.get('/api/object-type-configs', authenticateToken, async (req, res) => {
+app.get('/api/object-type-configs', authenticateToken, requirePermission('types.read'), async (req, res) => {
   try {
     const result = await query(
       `SELECT type_name, emoji, color 
@@ -315,7 +471,7 @@ app.get('/api/object-type-configs', authenticateToken, async (req, res) => {
   }
 })
 
-app.post('/api/object-type-configs', authenticateToken, async (req, res) => {
+app.post('/api/object-type-configs', authenticateToken, requirePermission('types.create'), async (req, res) => {
   try {
     const { typeName, emoji, color } = req.body
 
@@ -349,7 +505,7 @@ app.post('/api/object-type-configs', authenticateToken, async (req, res) => {
   }
 })
 
-app.delete('/api/object-type-configs/:typeName', authenticateToken, async (req, res) => {
+app.delete('/api/object-type-configs/:typeName', authenticateToken, requirePermission('types.delete'), async (req, res) => {
   try {
     const typeName = req.params.typeName.toLowerCase()
     
