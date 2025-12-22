@@ -3,13 +3,14 @@
  * Tests user authentication, creation, and management
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { User } from '../../backend/models/User.js'
+import { query } from '../../backend/database.js'
 import bcrypt from 'bcryptjs'
 
 // Mock database queries
 const mockQuery = (mockResults) => {
-  return jest.fn().mockImplementation((sql, params) => {
+  return vi.fn().mockImplementation((sql, params) => {
     if (sql.includes('SELECT u.*, t.name as tenant_name')) {
       if (sql.includes('WHERE u.email = $1')) {
         return { rows: mockResults.userByEmail || [] }

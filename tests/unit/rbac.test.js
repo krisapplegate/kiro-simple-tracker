@@ -3,13 +3,13 @@
  * Tests the RBACService class and permission logic
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { RBACService } from '../../backend/services/RBACService.js'
 import { query } from '../../backend/database.js'
 
 // Mock database queries for unit testing
 const mockQuery = (mockResults) => {
-  return jest.fn().mockImplementation((sql, params) => {
+  return vi.fn().mockImplementation((sql, params) => {
     // Return different results based on SQL query patterns
     if (sql.includes('SELECT DISTINCT p.name')) {
       return { rows: mockResults.permissions || [] }
@@ -51,7 +51,7 @@ describe('RBACService', () => {
 
     it('should return empty array on error', async () => {
       const originalQuery = query
-      query = jest.fn().mockRejectedValue(new Error('Database error'))
+      query = vi.fn().mockRejectedValue(new Error('Database error'))
       
       const permissions = await RBACService.getUserPermissions(1, 1)
       
@@ -86,7 +86,7 @@ describe('RBACService', () => {
 
     it('should return false on database error', async () => {
       const originalQuery = query
-      query = jest.fn().mockRejectedValue(new Error('Database error'))
+      query = vi.fn().mockRejectedValue(new Error('Database error'))
       
       const hasPermission = await RBACService.hasPermission(1, 1, 'objects.read')
       
@@ -99,7 +99,7 @@ describe('RBACService', () => {
   describe('canAccessObject', () => {
     it('should allow access with manage permission', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [{ name: 'objects.manage' }] }) // hasPermission call
       
       const canAccess = await RBACService.canAccessObject(1, 1, 1, 'delete')
@@ -111,7 +111,7 @@ describe('RBACService', () => {
 
     it('should check ownership for non-manage users', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [] }) // hasPermission(manage) = false
         .mockResolvedValueOnce({ rows: [{ name: 'objects.delete' }] }) // hasPermission(delete) = true
         .mockResolvedValueOnce({ rows: [{ created_by: 1 }] }) // object ownership check
@@ -125,7 +125,7 @@ describe('RBACService', () => {
 
     it('should deny access for non-owners without manage permission', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [] }) // hasPermission(manage) = false
         .mockResolvedValueOnce({ rows: [{ name: 'objects.delete' }] }) // hasPermission(delete) = true
         .mockResolvedValueOnce({ rows: [{ created_by: 2 }] }) // different owner
@@ -168,7 +168,7 @@ describe('RBACService', () => {
       }
       
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [{ id: 1, name: 'test-role' }] }) // role creation
         .mockResolvedValue({ rows: [] }) // permission assignments
       
@@ -189,7 +189,7 @@ describe('RBACService', () => {
       }
       
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [{ id: 1, name: 'test-role' }] })
       
       const role = await RBACService.createRole(roleData, 1, 1)
@@ -204,7 +204,7 @@ describe('RBACService', () => {
   describe('deleteRole', () => {
     it('should delete non-system role', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [{ is_system_role: false }] }) // role check
         .mockResolvedValueOnce({ rowCount: 1 }) // deletion
       
@@ -217,7 +217,7 @@ describe('RBACService', () => {
 
     it('should not delete system role', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [{ is_system_role: true }] })
       
       await expect(RBACService.deleteRole(1, 1)).rejects.toThrow('System roles cannot be deleted')
@@ -227,7 +227,7 @@ describe('RBACService', () => {
 
     it('should return false for non-existent role', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [] })
       
       const result = await RBACService.deleteRole(999, 1)
@@ -241,7 +241,7 @@ describe('RBACService', () => {
   describe('assignRoleToUser', () => {
     it('should assign role to user', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [{ user_id: 1, role_id: 2 }] })
       
       const assignment = await RBACService.assignRoleToUser(1, 2, 1)
@@ -254,7 +254,7 @@ describe('RBACService', () => {
 
     it('should handle duplicate assignment gracefully', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [] }) // ON CONFLICT DO NOTHING
       
       const assignment = await RBACService.assignRoleToUser(1, 2, 1)
@@ -268,7 +268,7 @@ describe('RBACService', () => {
   describe('removeRoleFromUser', () => {
     it('should remove role from user', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rowCount: 1 })
       
       const result = await RBACService.removeRoleFromUser(1, 2)
@@ -280,7 +280,7 @@ describe('RBACService', () => {
 
     it('should return false when assignment not found', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rowCount: 0 })
       
       const result = await RBACService.removeRoleFromUser(1, 999)
@@ -312,7 +312,7 @@ describe('RBACService', () => {
   describe('addUserToGroup', () => {
     it('should add user to group', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rows: [{ user_id: 1, group_id: 1 }] })
       
       const assignment = await RBACService.addUserToGroup(1, 1, 1)
@@ -327,7 +327,7 @@ describe('RBACService', () => {
   describe('removeUserFromGroup', () => {
     it('should remove user from group', async () => {
       const originalQuery = query
-      query = jest.fn()
+      query = vi.fn()
         .mockResolvedValueOnce({ rowCount: 1 })
       
       const result = await RBACService.removeUserFromGroup(1, 1)
