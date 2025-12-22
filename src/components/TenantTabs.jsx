@@ -153,7 +153,7 @@ const TenantTabs = ({ children }) => {
           
           {/* Tenant Selector Dropdown */}
           {showTenantSelector && (
-            <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+            <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-[10001]">
               <div className="p-3 border-b border-gray-100">
                 <h3 className="text-sm font-medium text-gray-900">Open Workspace</h3>
               </div>
@@ -190,7 +190,7 @@ const TenantTabs = ({ children }) => {
       {/* Click outside to close dropdown */}
       {showTenantSelector && (
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-[10000]"
           onClick={() => setShowTenantSelector(false)}
         />
       )}

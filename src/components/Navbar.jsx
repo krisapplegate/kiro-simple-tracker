@@ -94,7 +94,7 @@ const Navbar = ({ sidebarOpen, setSidebarOpen }) => {
             </button>
             
             {showTenantMenu && (
-              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-[10001]">
                 <div className="p-3 border-b border-gray-100">
                   <h3 className="text-sm font-medium text-gray-900">Current Workspace</h3>
                   <p className="text-xs text-gray-500 mt-1">{currentTenant?.name}</p>
@@ -142,7 +142,7 @@ const Navbar = ({ sidebarOpen, setSidebarOpen }) => {
             </button>
 
             {showUserMenu && (
-              <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-50">
+              <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-[10001]">
                 <div className="py-1">
                   <button
                     className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
@@ -171,13 +171,13 @@ const Navbar = ({ sidebarOpen, setSidebarOpen }) => {
       {/* Click outside handlers */}
       {showUserMenu && (
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-[10000]"
           onClick={() => setShowUserMenu(false)}
         />
       )}
       {showTenantMenu && (
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-[10000]"
           onClick={() => setShowTenantMenu(false)}
         />
       )}
