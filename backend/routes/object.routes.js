@@ -1,6 +1,7 @@
 import express from 'express'
 import multer from 'multer'
 import { ObjectController } from '../controllers/ObjectController.js'
+import { TypeConfigController } from '../controllers/TypeConfigController.js'
 import { authenticateToken } from '../middleware/auth.js'
 import { requirePermission, requireObjectAccess } from '../middleware/rbac.js'
 
@@ -48,8 +49,8 @@ router.get('/images/recent', authenticateToken, requirePermission('objects.read'
 router.delete('/images/:id', authenticateToken, requirePermission('objects.update'), ObjectController.deleteImage)
 
 // Object Type Configuration endpoints
-router.get('/object-type-configs', authenticateToken, requirePermission('types.read'), ObjectController.getTypeConfigs)
-router.post('/object-type-configs', authenticateToken, requirePermission('types.create'), ObjectController.createTypeConfig)
-router.delete('/object-type-configs/:typeName', authenticateToken, requirePermission('types.delete'), ObjectController.deleteTypeConfig)
+router.get('/object-type-configs', authenticateToken, requirePermission('types.read'), TypeConfigController.getTypeConfigs)
+router.post('/object-type-configs', authenticateToken, requirePermission('types.create'), TypeConfigController.createTypeConfig)
+router.delete('/object-type-configs/:typeName', authenticateToken, requirePermission('types.delete'), TypeConfigController.deleteTypeConfig)
 
 export { router as objectRoutes }

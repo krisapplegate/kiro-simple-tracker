@@ -209,34 +209,6 @@ export class ObjectController {
     }
   }
 
-  // Type configuration methods would go to a separate TypeConfigController
-  static async getTypeConfigs(req, res) {
-    try {
-      // This should be moved to a TypeConfigService
-      res.status(501).json({ message: 'Type configs moved to TypeConfigController' })
-    } catch (error) {
-      console.error('Error fetching type configs:', error)
-      res.status(500).json({ message: 'Server error' })
-    }
-  }
-
-  static async createTypeConfig(req, res) {
-    try {
-      // This should be moved to a TypeConfigService
-      res.status(501).json({ message: 'Type configs moved to TypeConfigController' })
-    } catch (error) {
-      console.error('Error creating type config:', error)
-      res.status(500).json({ message: 'Server error' })
-    }
-  }
-
-  static async deleteTypeConfig(req, res) {
-    try {
-      // This should be moved to a TypeConfigService
-      res.status(501).json({ message: 'Type configs moved to TypeConfigController' })
-    } catch (error) {
-      console.error('Error deleting type config:', error)
-      res.status(500).json({ message: 'Server error' })
-    }
-  }
+  // Type configuration methods are now handled by TypeConfigController
+  // These methods are kept for backward compatibility but should not be used
 }
