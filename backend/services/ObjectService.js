@@ -151,6 +151,12 @@ export class ObjectService {
   }
 
   async getObjectImages(objectId, tenantId) {
+    // Check if object exists first
+    const object = await this.objectRepo.findById(objectId, tenantId)
+    if (!object) {
+      throw new Error('Object not found')
+    }
+
     const images = await this.imageRepo.findByObjectId(objectId, tenantId)
     
     // Add URLs to images
