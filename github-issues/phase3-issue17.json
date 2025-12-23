@@ -1,0 +1,10 @@
+{
+  "title": "[MEDIUM] Implement Graceful Shutdown",
+  "body": "## Problem\n\nServer stops immediately on SIGTERM/SIGINT.\n\n## Issues\n\n- \u274c Active requests terminated mid-flight\n- \u274c WebSocket connections dropped without notice\n- \u274c Database connections not closed\n- \u274c Potential data loss\n- \u274c Poor user experience\n\n## Recommendation\n\n```javascript\nconst gracefulShutdown = () => {\n  console.log('Received shutdown signal, closing gracefully...')\n\n  // Stop accepting new connections\n  server.close(() => {\n    console.log('HTTP server closed')\n\n    // Close all WebSocket connections\n    wss.clients.forEach(client => {\n      client.send(JSON.stringify({ type: 'server_shutdown' }))\n      client.close()\n    })\n\n    // Close database pool\n    pool.end(() => {\n      console.log('Database pool closed')\n\n      // Close Redis connection\n      redis.quit(() => {\n        console.log('Redis connection closed')\n        process.exit(0)\n      })\n    })\n  })\n\n  // Force shutdown after 30 seconds\n  setTimeout(() => {\n    console.error('Forced shutdown after timeout')\n    process.exit(1)\n  }, 30000)\n}\n\nprocess.on('SIGTERM', gracefulShutdown)\nprocess.on('SIGINT', gracefulShutdown)\n```\n\n## Effort\n\n\u23f1\ufe0f **3 days**\n\n## Phase\n\n**Phase 3 - Medium Priority** \ud83d\udfe1\n\n---\n\n**Metadata:**\n- **Effort:** 3 days\n- **Dependencies:** None\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #17\n- `REFACTORING_ROADMAP.md` - Phase 3\n",
+  "labels": [
+    "medium-priority",
+    "backend",
+    "reliability",
+    "phase-3"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "title": "[MEDIUM] Enhance Health Checks",
+  "body": "## Problem\n\nHealth check only verifies database connection.\n\n**Current State:**\n```javascript\napp.get('/api/health', async (req, res) => {\n  await query('SELECT 1')\n  res.json({ status: 'OK' })\n})\n```\n\n## Missing Checks\n\n- \u274c MinIO availability\n- \u274c Redis connectivity\n- \u274c WebSocket server status\n- \u274c Disk space\n- \u274c Memory usage\n\n## Recommendation\n\n```javascript\napp.get('/api/health', async (req, res) => {\n  const health = {\n    status: 'healthy',\n    timestamp: new Date().toISOString(),\n    uptime: process.uptime(),\n    checks: {}\n  }\n\n  // Database\n  try {\n    await query('SELECT 1')\n    health.checks.database = { status: 'up' }\n  } catch (error) {\n    health.checks.database = { status: 'down', error: error.message }\n    health.status = 'unhealthy'\n  }\n\n  // MinIO\n  try {\n    await minioService.listBuckets()\n    health.checks.minio = { status: 'up' }\n  } catch (error) {\n    health.checks.minio = { status: 'down', error: error.message }\n    health.status = 'degraded'\n  }\n\n  // Redis\n  try {\n    await redis.ping()\n    health.checks.redis = { status: 'up' }\n  } catch (error) {\n    health.checks.redis = { status: 'down' }\n    health.status = 'degraded'\n  }\n\n  // WebSocket\n  health.checks.websocket = {\n    status: 'up',\n    connections: wss.clients.size\n  }\n\n  const statusCode = health.status === 'healthy' ? 200 : 503\n  res.status(statusCode).json(health)\n})\n\n// Kubernetes probes\napp.get('/api/ready', async (req, res) => {\n  // Readiness: can accept traffic\n  res.json({ ready: true })\n})\n\napp.get('/api/live', (req, res) => {\n  // Liveness: should container be restarted\n  res.json({ alive: true })\n})\n```\n\n## Effort\n\n\u23f1\ufe0f **3 days**\n\n## Phase\n\n**Phase 3 - Medium Priority** \ud83d\udfe1\n\n---\n\n**Metadata:**\n- **Effort:** 3 days\n- **Dependencies:** #11 (Monitoring)\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #18\n- `REFACTORING_ROADMAP.md` - Phase 3\n",
+  "labels": [
+    "medium-priority",
+    "backend",
+    "observability",
+    "phase-3"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "title": "[MEDIUM] Tune Database Connection Pool",
+  "body": "## Problem\n\nDefault connection pool settings with no monitoring.\n\n**Current State:**\n```javascript\nconst pool = new Pool({\n  max: 20,  // Is this right?\n  idleTimeoutMillis: 30000,\n  connectionTimeoutMillis: 2000\n})\n```\n\n## Issues\n\n- \u274c Pool size not tuned for workload\n- \u274c No connection pool monitoring\n- \u274c No error handling for pool exhaustion\n- \u274c Potential connection leaks\n\n## Recommendation\n\n```javascript\nconst pool = new Pool({\n  // Sizing\n  max: parseInt(process.env.DB_POOL_MAX) || 20,\n  min: parseInt(process.env.DB_POOL_MIN) || 2,\n\n  // Timeouts\n  idleTimeoutMillis: 30000,\n  connectionTimeoutMillis: 5000,\n\n  // Lifecycle\n  allowExitOnIdle: false,\n\n  // Monitoring\n  log: (msg) => logger.debug('DB Pool:', msg)\n})\n\n// Error handling\npool.on('error', (err, client) => {\n  logger.error('Unexpected DB pool error', { error: err })\n})\n\npool.on('connect', (client) => {\n  logger.debug('New DB connection established')\n})\n\npool.on('remove', (client) => {\n  logger.debug('DB connection removed from pool')\n})\n\n// Metrics\nsetInterval(() => {\n  logger.info('DB Pool Stats', {\n    total: pool.totalCount,\n    idle: pool.idleCount,\n    waiting: pool.waitingCount\n  })\n\n  // Export to Prometheus\n  dbPoolTotal.set(pool.totalCount)\n  dbPoolIdle.set(pool.idleCount)\n  dbPoolWaiting.set(pool.waitingCount)\n}, 60000) // Every minute\n```\n\n## Tuning Guidelines\n\n- **Max connections:** `(core_count * 2) + effective_spindle_count`\n- **Min connections:** 2-5 for quick response\n- Monitor: If `waitingCount` > 0, increase pool size\n- Monitor: If `idleCount` > `max * 0.8`, decrease pool size\n\n## Effort\n\n\u23f1\ufe0f **2 days**\n\n## Phase\n\n**Phase 3 - Medium Priority** \ud83d\udfe1\n\n---\n\n**Metadata:**\n- **Effort:** 2 days\n- **Dependencies:** #10 (Logging)\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #20\n- `REFACTORING_ROADMAP.md` - Phase 3\n",
+  "labels": [
+    "medium-priority",
+    "database",
+    "performance",
+    "phase-3"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "title": "[LOW] Enforce Linting & Formatting",
+  "body": "## Problem\n\nNo code quality enforcement.\n\n## Missing\n\n- \u274c No ESLint configuration\n- \u274c No Prettier configuration\n- \u274c No pre-commit hooks\n- \u274c Inconsistent code style\n\n## Recommendation\n\n```bash\nnpm install -D eslint prettier eslint-config-prettier \\\n  eslint-plugin-react eslint-plugin-react-hooks \\\n  @typescript-eslint/eslint-plugin @typescript-eslint/parser \\\n  husky lint-staged\n```\n\n```javascript\n// .eslintrc.js\nmodule.exports = {\n  extends: [\n    'eslint:recommended',\n    'plugin:react/recommended',\n    'plugin:react-hooks/recommended',\n    'prettier'\n  ],\n  rules: {\n    'no-console': 'warn',\n    'no-unused-vars': 'error',\n    'react/prop-types': 'off'\n  }\n}\n\n// .prettierrc\n{\n  \"semi\": false,\n  \"singleQuote\": true,\n  \"tabWidth\": 2,\n  \"trailingComma\": \"es5\"\n}\n```\n\n**Git hooks:**\n```bash\nnpx husky install\nnpx husky add .husky/pre-commit \"npx lint-staged\"\n```\n\n```json\n// package.json\n{\n  \"lint-staged\": {\n    \"*.{js,jsx}\": [\"eslint --fix\", \"prettier --write\"],\n    \"*.{json,md}\": [\"prettier --write\"]\n  }\n}\n```\n\n## Effort\n\n\u23f1\ufe0f **2 days**\n\n## Phase\n\n**Phase 4 - Low Priority** \ud83d\udfe2\n\n---\n\n**Metadata:**\n- **Effort:** 2 days\n- **Dependencies:** None\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #23\n- `REFACTORING_ROADMAP.md` - Phase 4\n",
+  "labels": [
+    "low-priority",
+    "code-quality",
+    "developer-experience",
+    "phase-4"
+  ]
+}

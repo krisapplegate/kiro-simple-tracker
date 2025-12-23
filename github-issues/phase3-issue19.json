@@ -1,0 +1,11 @@
+{
+  "title": "[MEDIUM] Complete TODO Implementations",
+  "body": "## Problem\n\n4 incomplete TODO comments in production code.\n\n**Found TODOs:**\n\n1. `src/components/ObjectDrawer.jsx` - TODO: Implement actual update functionality\n2. `src/components/admin/GroupManagement.jsx` - TODO: Implement delete group\n3. `src/components/admin/UserManagement.jsx` - TODO: Implement delete user\n4. `src/components/MapView.jsx` - TODO: Implement actual update functionality\n\n## Issues\n\n- \u274c Incomplete features in production\n- \u274c Poor user experience\n- \u274c Technical debt accumulation\n\n## Tasks\n\n### 1. Implement Object Update (`ObjectDrawer.jsx`)\n- Add form for editing object properties\n- Integrate with PUT `/api/objects/:id` endpoint\n- Add optimistic updates\n- Handle validation errors\n\n### 2. Implement Delete Group (`GroupManagement.jsx`)\n- Add delete confirmation modal\n- Integrate with DELETE `/api/rbac/groups/:id`\n- Handle users in group (cascade or prevent)\n- Show success/error notifications\n\n### 3. Implement Delete User (`UserManagement.jsx`)\n- Add delete confirmation modal\n- Integrate with DELETE `/api/users/:id`\n- Handle user's objects (reassign or delete)\n- Prevent self-deletion\n\n### 4. Implement Map Update (`MapView.jsx`)\n- Add click-to-update location\n- Show confirmation before updating\n- Integrate with PUT `/api/objects/:id/location`\n- Update marker position optimistically\n\n## Effort\n\n\u23f1\ufe0f **1 week**\n\n## Phase\n\n**Phase 3 - Medium Priority** \ud83d\udfe1\n\n---\n\n**Metadata:**\n- **Effort:** 1 week\n- **Dependencies:** None\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #19\n- `REFACTORING_ROADMAP.md` - Phase 3\n",
+  "labels": [
+    "medium-priority",
+    "frontend",
+    "backend",
+    "technical-debt",
+    "phase-3"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "title": "[CRITICAL][SECURITY] Remove Hardcoded Secrets from Configuration",
+  "body": "## Problem\n\nSecrets are hardcoded in `docker-compose.yml` and committed to git.\n\n**Location:** `docker-compose.yml`\n\n**Current Configuration:**\n```yaml\nbackend:\n  environment:\n    - JWT_SECRET=your-development-secret-key  # \u274c Committed to git!\n    - DB_PASSWORD=tracker_password             # \u274c Committed to git!\n    - MINIO_ACCESS_KEY=minioadmin              # \u274c Default credentials!\n```\n\n## Security Risks\n\n- \ud83d\udea8 Secrets in version control history\n- \ud83d\udea8 Same secrets used across all environments\n- \ud83d\udea8 Default MinIO credentials\n- \ud83d\udea8 Cannot rotate secrets without code commit\n- \ud83d\udea8 Secrets visible to all repository contributors\n\n## Recommendation\n\n### Development\n```yaml\nbackend:\n  env_file:\n    - .env.local  # Not committed to git\n  environment:\n    - NODE_ENV=${NODE_ENV}\n```\n\n### Production\nUse proper secret management:\n- AWS: AWS Secrets Manager or Parameter Store\n- GCP: Secret Manager\n- Azure: Key Vault\n- Kubernetes: Secrets\n- Self-hosted: HashiCorp Vault\n\n## Implementation Steps\n\n1. Create `.env.example` template\n2. Add `.env.local` to `.gitignore`\n3. Update `docker-compose.yml` to use `env_file`\n4. Generate strong secrets for each environment\n5. Document secret rotation process\n6. Update deployment documentation\n7. Rotate all current secrets (assume compromised)\n\n## Success Criteria\n\n- [ ] No secrets in git repository\n- [ ] `.env.local` in `.gitignore`\n- [ ] Different secrets per environment\n- [ ] Secret rotation process documented\n- [ ] All current secrets rotated\n\n## Effort\n\n\u23f1\ufe0f **3 days**\n\n## Dependencies\n\nNone - **Blocks** #16 (CORS configuration)\n\n## Phase\n\n**Phase 1 - Critical** \ud83d\udd34\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #5\n- `REFACTORING_ROADMAP.md` - Phase 1\n\n---\n\n**Metadata:**\n- **Effort:** 3 days\n- **Dependencies:** None (BLOCKS: #16)\n",
+  "labels": [
+    "critical",
+    "security",
+    "devops",
+    "configuration",
+    "phase-1"
+  ]
+}

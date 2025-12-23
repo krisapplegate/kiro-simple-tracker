@@ -1,0 +1,11 @@
+{
+  "title": "[CRITICAL] Refactor Monolithic Server Architecture",
+  "body": "## Problem\n\n`backend/server.js` is **1,323 lines** containing routes, business logic, WebSocket handling, and database queries in a single file.\n\n**Location:** `backend/server.js`\n\n## Issues\n\n- \u274c Violates Single Responsibility Principle\n- \u274c Impossible to scale individual components\n- \u274c Difficult to test in isolation\n- \u274c High coupling, low cohesion\n- \u274c Merge conflicts inevitable in team environments\n\n## Recommendation\n\nImplement layered architecture:\n\n```\nbackend/\n\u251c\u2500\u2500 routes/           # Express route definitions\n\u2502   \u251c\u2500\u2500 auth.routes.js\n\u2502   \u251c\u2500\u2500 objects.routes.js\n\u2502   \u251c\u2500\u2500 rbac.routes.js\n\u2502   \u2514\u2500\u2500 admin.routes.js\n\u251c\u2500\u2500 controllers/      # Request/response handling\n\u251c\u2500\u2500 services/         # Business logic\n\u251c\u2500\u2500 repositories/     # Data access layer\n\u251c\u2500\u2500 middleware/       # Reusable middleware\n\u2514\u2500\u2500 websocket/        # WebSocket handling\n```\n\n## Implementation Steps\n\n1. Create directory structure\n2. Extract routes to separate files\n3. Create controller layer for request handling\n4. Move business logic to services\n5. Implement repository pattern for data access\n6. Update tests to work with new structure\n7. Maintain >80% test coverage during refactor\n\n## Success Criteria\n\n- [ ] No file exceeds 300 lines\n- [ ] Clear separation of concerns\n- [ ] All tests passing\n- [ ] Test coverage maintained\n\n## Effort\n\n\u23f1\ufe0f **2 weeks**\n\n## Dependencies\n\nNone - **Blocking issue** for #6, #7, #8, #12, #15\n\n## Phase\n\n**Phase 1 - Critical** \ud83d\udd34\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #1\n- `REFACTORING_ROADMAP.md` - Phase 1\n\n---\n\n**Metadata:**\n- **Effort:** 2 weeks\n- **Dependencies:** None (BLOCKS: #6, #7, #8, #12, #15)\n",
+  "labels": [
+    "critical",
+    "architecture",
+    "backend",
+    "refactoring",
+    "phase-1"
+  ]
+}

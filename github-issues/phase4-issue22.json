@@ -1,0 +1,10 @@
+{
+  "title": "[LOW] Add Code Splitting & Lazy Loading",
+  "body": "## Problem\n\nAll routes bundled in main chunk - large initial load time.\n\n**Current State:**\n```javascript\nimport AdminPage from './pages/AdminPage'  // \u274c In main bundle\nimport DashboardPage from './pages/DashboardPage'\n```\n\n## Recommendation\n\n```javascript\nimport { lazy, Suspense } from 'react'\n\n// Lazy load routes\nconst AdminPage = lazy(() => import('./pages/AdminPage'))\nconst DashboardPage = lazy(() => import('./pages/DashboardPage'))\nconst LoginPage = lazy(() => import('./pages/LoginPage'))\n\n// Loading component\nfunction LoadingFallback() {\n  return (\n    <div className=\"flex items-center justify-center h-screen\">\n      <div className=\"text-center\">\n        <div className=\"spinner-border\" />\n        <p>Loading...</p>\n      </div>\n    </div>\n  )\n}\n\n// In routes\nfunction App() {\n  return (\n    <Suspense fallback={<LoadingFallback />}>\n      <Routes>\n        <Route path=\"/login\" element={<LoginPage />} />\n        <Route path=\"/dashboard\" element={<DashboardPage />} />\n        <Route path=\"/admin\" element={<AdminPage />} />\n      </Routes>\n    </Suspense>\n  )\n}\n```\n\n## Expected Improvements\n\n- Initial bundle: -40% size\n- First contentful paint: -30%\n- Time to interactive: -25%\n\n## Effort\n\n\u23f1\ufe0f **3 days**\n\n## Phase\n\n**Phase 4 - Low Priority** \ud83d\udfe2\n\n---\n\n**Metadata:**\n- **Effort:** 3 days\n- **Dependencies:** None\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #22\n- `REFACTORING_ROADMAP.md` - Phase 4\n",
+  "labels": [
+    "low-priority",
+    "frontend",
+    "performance",
+    "phase-4"
+  ]
+}
