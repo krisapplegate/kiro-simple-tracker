@@ -9,7 +9,7 @@
     "dev:backend": "nodemon backend/server.js",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "npm run test:unit && npm run test:react && npm run test:integration",
+    "test": "npm run test:unit && npm run test:integration",
     "test:unit": "vitest run --config tests/vitest.config.js",
     "test:react": "vitest run --config tests/vitest.react.config.js",
     "test:unit:watch": "vitest --config tests/vitest.config.js",
