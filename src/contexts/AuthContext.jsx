@@ -74,6 +74,11 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem('token')
     setUser(null)
+    
+    // Clear tenant tabs if the function is available
+    if (typeof window.clearTenantTabs === 'function') {
+      window.clearTenantTabs()
+    }
   }
 
   const value = {
