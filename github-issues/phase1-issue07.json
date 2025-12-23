@@ -1,0 +1,11 @@
+{
+  "title": "[CRITICAL] Add API Versioning",
+  "body": "## Problem\n\nAll routes at `/api/*` with no versioning strategy.\n\n## Issues\n\n- \u274c Breaking changes require coordinated frontend/backend deployment\n- \u274c No backward compatibility for clients\n- \u274c Difficult to deprecate endpoints gracefully\n- \u274c Cannot support multiple client versions\n- \u274c Risky to evolve API\n\n## Recommendation\n\n**Option 1: Version in URL** (Recommended)\n```javascript\napp.use('/api/v1', v1Router)\napp.use('/api/v2', v2Router)\n\n// v1 router\nconst v1Router = express.Router()\nv1Router.use('/auth', authRoutesV1)\nv1Router.use('/objects', objectsRoutesV1)\nv1Router.use('/admin', adminRoutesV1)\n```\n\n**Option 2: Version in headers**\n```javascript\napp.use((req, res, next) => {\n  req.apiVersion = req.headers['api-version'] || 'v1'\n  next()\n})\n```\n\n**Recommendation: Use Option 1** (URL-based) for better discoverability and caching.\n\n## Migration Strategy\n\n1. Current `/api/*` \u2192 `/api/v1/*` (backward compatible alias)\n2. Add deprecation warning header to v1 responses\n3. Support v1 and v2 in parallel for 3 months\n4. Document migration path for clients\n5. Remove v1 after deprecation period\n\n## Implementation Steps\n\n1. Create `routes/v1/` directory\n2. Move existing routes to v1\n3. Create v1 router\n4. Add backward compatibility for `/api/*` \u2192 `/api/v1/*`\n5. Add deprecation headers middleware\n6. Update frontend to use `/api/v1/*`\n7. Update API documentation\n8. Add version negotiation tests\n\n## Success Criteria\n\n- [ ] All routes under `/api/v1/*`\n- [ ] Backward compatibility maintained\n- [ ] Deprecation warnings added\n- [ ] Documentation updated\n- [ ] Tests verify version routing\n\n## Effort\n\n\u23f1\ufe0f **1 week**\n\n## Dependencies\n\n**Requires:** #1 (Refactor architecture)\n**Blocks:** #14 (API documentation)\n\n## Phase\n\n**Phase 1 - Critical** \ud83d\udd34\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #7\n- `REFACTORING_ROADMAP.md` - Phase 1\n\n---\n\n**Metadata:**\n- **Effort:** 1 week\n- **Dependencies:** #1 (Refactor architecture) - BLOCKS: #14\n",
+  "labels": [
+    "critical",
+    "backend",
+    "api",
+    "breaking-change",
+    "phase-1"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "title": "[MEDIUM] Standardize Tenant Resolution",
+  "body": "## Problem\n\nMultiple inconsistent ways to specify tenant ID.\n\n**Current State:**\n```javascript\n// JWT token (user.tenantId)\n// X-Tenant-Id header\n// Path parameter (:tenantId)\n// Query parameter\n// Inconsistent precedence and validation\n```\n\n## Issues\n\n- \u274c Confusing for API consumers\n- \u274c Inconsistent behavior across endpoints\n- \u274c Security risks from precedence issues\n- \u274c Difficult to audit tenant access\n\n## Recommendation\n\nStandardize tenant resolution with clear precedence:\n\n```javascript\n// middleware/tenantResolver.js\nconst resolveTenant = async (req, res, next) => {\n  // Precedence: header > path > JWT\n  const tenantId =\n    parseInt(req.headers['x-tenant-id']) ||\n    parseInt(req.params.tenantId) ||\n    req.user.tenantId\n\n  // Validate user has access to this tenant\n  const hasAccess = await validateTenantAccess(req.user.id, tenantId)\n\n  if (!hasAccess) {\n    return res.status(403).json({\n      error: 'TENANT_ACCESS_DENIED',\n      message: 'You do not have access to this workspace'\n    })\n  }\n\n  req.tenantId = tenantId\n  next()\n}\n\n// Apply to all routes\napp.use('/api/v1', authenticateToken, resolveTenant)\n```\n\n## Effort\n\n\u23f1\ufe0f **3 days**\n\n## Phase\n\n**Phase 3 - Medium Priority** \ud83d\udfe1\n\n---\n\n**Metadata:**\n- **Effort:** 3 days\n- **Dependencies:** #1 (Refactor architecture)\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #15\n- `REFACTORING_ROADMAP.md` - Phase 3\n",
+  "labels": [
+    "medium-priority",
+    "backend",
+    "multi-tenant",
+    "phase-3"
+  ]
+}

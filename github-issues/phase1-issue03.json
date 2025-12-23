@@ -1,0 +1,10 @@
+{
+  "title": "[CRITICAL] Remove Production Simulation Code",
+  "body": "## Problem\n\nLocation simulation logic runs in **ALL environments** including production.\n\n**Location:** `backend/server.js:1273-1317`\n\n**Current Code:**\n```javascript\n// Runs every 10 seconds in production!\nsetInterval(async () => {\n  const result = await query('SELECT id, lat, lng, tenant_id FROM objects WHERE status = $1', ['active'])\n  // Updates 30% of objects randomly\n}, 10000)\n```\n\n## Issues\n\n- \u274c Consumes CPU/DB resources in production\n- \u274c No environment check (`NODE_ENV`)\n- \u274c Can interfere with real data\n- \u274c Masks performance issues in testing\n- \u274c Creates confusion about data source\n\n## Recommendation\n\n**Remove entirely from `server.js`**\n\nSimulation already exists in `/simulator/` directory and should be used separately.\n\n## Implementation Steps\n\n1. Remove lines 1273-1317 from `backend/server.js`\n2. Update documentation to reference `/simulator/` for testing\n3. Verify no code depends on simulated data\n4. Test that real location updates still work\n\n## Success Criteria\n\n- [ ] No simulation code in `server.js`\n- [ ] Production environment runs without simulation\n- [ ] Tests use `/simulator/` or mock data\n- [ ] Documentation updated\n\n## Effort\n\n\u23f1\ufe0f **2 days**\n\n## Dependencies\n\nNone\n\n## Phase\n\n**Phase 1 - Critical** \ud83d\udd34\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #3\n- `REFACTORING_ROADMAP.md` - Phase 1\n\n---\n\n**Metadata:**\n- **Effort:** 2 days\n- **Dependencies:** None\n",
+  "labels": [
+    "critical",
+    "backend",
+    "performance",
+    "phase-1"
+  ]
+}

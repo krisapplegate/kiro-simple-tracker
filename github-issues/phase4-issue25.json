@@ -1,0 +1,11 @@
+{
+  "title": "[LOW] Add Internationalization (i18n)",
+  "body": "## Problem\n\nAll text hardcoded in English.\n\n## Recommendation\n\n```bash\nnpm install react-i18next i18next\n```\n\n```javascript\n// i18n.js\nimport i18n from 'i18next'\nimport { initReactI18next } from 'react-i18next'\n\ni18n\n  .use(initReactI18next)\n  .init({\n    resources: {\n      en: {\n        translation: {\n          'dashboard.title': 'Dashboard',\n          'objects.create': 'Create Object',\n          'auth.login': 'Login',\n          'auth.logout': 'Logout'\n        }\n      },\n      es: {\n        translation: {\n          'dashboard.title': 'Panel de Control',\n          'objects.create': 'Crear Objeto',\n          'auth.login': 'Iniciar Sesi\u00f3n',\n          'auth.logout': 'Cerrar Sesi\u00f3n'\n        }\n      },\n      fr: {\n        translation: {\n          'dashboard.title': 'Tableau de Bord',\n          'objects.create': 'Cr\u00e9er un Objet',\n          'auth.login': 'Connexion',\n          'auth.logout': 'D\u00e9connexion'\n        }\n      }\n    },\n    lng: 'en',\n    fallbackLng: 'en',\n    interpolation: {\n      escapeValue: false\n    }\n  })\n\nexport default i18n\n\n// Usage\nimport { useTranslation } from 'react-i18next'\n\nfunction Dashboard() {\n  const { t, i18n } = useTranslation()\n\n  return (\n    <div>\n      <h1>{t('dashboard.title')}</h1>\n      <button onClick={() => i18n.changeLanguage('es')}>\n        Espa\u00f1ol\n      </button>\n    </div>\n  )\n}\n```\n\n## Effort\n\n\u23f1\ufe0f **1 week**\n\n## Phase\n\n**Phase 4 - Low Priority** \ud83d\udfe2\n\n---\n\n**Metadata:**\n- **Effort:** 1 week\n- **Dependencies:** None\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #25\n- `REFACTORING_ROADMAP.md` - Phase 4\n",
+  "labels": [
+    "low-priority",
+    "frontend",
+    "i18n",
+    "globalization",
+    "phase-4"
+  ]
+}

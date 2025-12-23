@@ -1,0 +1,11 @@
+{
+  "title": "[CRITICAL][SECURITY] Fix WebSocket Authentication Vulnerability",
+  "body": "## Problem\n\nWebSocket connections allow clients to claim **any tenant ID** without authentication.\n\n**Location:** `backend/server.js:1236-1271`\n\n**Current Code (VULNERABLE):**\n```javascript\nwss.on('connection', (ws) => {\n  ws.tenantId = null  // \u274c No authentication!\n  ws.on('message', (message) => {\n    if (data.type === 'join_tenant') {\n      ws.tenantId = data.tenantId  // \u274c Client can claim ANY tenant!\n    }\n  })\n})\n```\n\n## Vulnerabilities\n\n1. \u274c No JWT validation on WebSocket connection\n2. \u274c **CRITICAL DATA LEAK** - Client can access any tenant's data\n3. \u274c No origin validation\n4. \u274c No rate limiting on messages\n\n## Recommendation\n\n```javascript\nwss.on('connection', async (ws, req) => {\n  // Extract and validate JWT from query params or headers\n  const token = extractTokenFromRequest(req)\n  try {\n    const user = jwt.verify(token, JWT_SECRET)\n    ws.userId = user.id\n    ws.tenantId = user.tenantId\n    ws.isAuthenticated = true\n  } catch (error) {\n    ws.close(1008, 'Unauthorized')\n    return\n  }\n})\n```\n\n## Implementation Steps\n\n1. Create `extractTokenFromRequest()` helper\n2. Validate JWT on WebSocket connection\n3. Store authenticated user info on WebSocket\n4. Remove client-controlled `join_tenant` message\n5. Update frontend to pass JWT in WebSocket connection\n6. Add integration tests for WebSocket auth\n\n## Success Criteria\n\n- [ ] JWT validation on all WebSocket connections\n- [ ] Clients cannot specify tenant ID\n- [ ] Unauthorized connections closed immediately\n- [ ] Integration tests verify auth flow\n\n## Effort\n\n\u23f1\ufe0f **1 week**\n\n## Dependencies\n\nNone\n\n## Phase\n\n**Phase 1 - Critical** \ud83d\udd34\n\n## Reference\n\n- `ARCHITECTURE_REVIEW.md` - Issue #2\n- `REFACTORING_ROADMAP.md` - Phase 1\n\n---\n\n**Metadata:**\n- **Effort:** 1 week\n- **Dependencies:** None\n",
+  "labels": [
+    "critical",
+    "security",
+    "websocket",
+    "backend",
+    "phase-1"
+  ]
+}
