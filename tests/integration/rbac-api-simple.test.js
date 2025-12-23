@@ -47,11 +47,21 @@ describe('RBAC API Simple Tests', () => {
   })
 
   it('should list roles for admin user', async () => {
-    const adminToken = await loginUser(testUsers.admin.email, testUsers.admin.password)
+    const loginResponse = await request(API_URL)
+      .post('/api/auth/login')
+      .send({ 
+        email: testUsers.admin.email, 
+        password: testUsers.admin.password 
+      })
+      .expect(200)
+    
+    const adminToken = loginResponse.body.token
+    const tenantId = loginResponse.body.user.tenant.id
     
     const response = await request(API_URL)
       .get('/api/rbac/roles')
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId.toString())
       .expect(200)
     
     expect(Array.isArray(response.body)).toBe(true)
@@ -59,11 +69,21 @@ describe('RBAC API Simple Tests', () => {
   })
 
   it('should list users for admin user', async () => {
-    const adminToken = await loginUser(testUsers.admin.email, testUsers.admin.password)
+    const loginResponse = await request(API_URL)
+      .post('/api/auth/login')
+      .send({ 
+        email: testUsers.admin.email, 
+        password: testUsers.admin.password 
+      })
+      .expect(200)
+    
+    const adminToken = loginResponse.body.token
+    const tenantId = loginResponse.body.user.tenant.id
     
     const response = await request(API_URL)
       .get('/api/users')
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId.toString())
       .expect(200)
     
     expect(Array.isArray(response.body)).toBe(true)
