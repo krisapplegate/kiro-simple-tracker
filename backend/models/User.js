@@ -199,4 +199,73 @@ export class User {
   static async verifyPassword(plainPassword, hashedPassword) {
     return await bcrypt.compare(plainPassword, hashedPassword)
   }
+
+  static async findByEmailAndTenant(email, tenantId) {
+    const result = await query(
+      `SELECT u.*, t.name as tenant_name 
+       FROM users u 
+       JOIN tenants t ON u.tenant_id = t.id 
+       WHERE u.email = $1 AND u.tenant_id = $2`,
+      [email, tenantId]
+    )
+    
+    if (result.rows.length === 0) {
+      return null
+    }
+    
+    const user = result.rows[0]
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenant: {
+        id: user.tenant_id,
+        name: user.tenant_name
+      }
+    }
+  }
+
+  static async getUserWithPermissions(userId, tenantId) {
+    try {
+      const result = await query(
+        `SELECT u.id, u.email, u.role,
+                COALESCE(
+                  json_agg(
+                    DISTINCT jsonb_build_object(
+                      'id', r.id,
+                      'name', r.name,
+                      'display_name', r.display_name
+                    )
+                  ) FILTER (WHERE r.id IS NOT NULL), 
+                  '[]'
+                ) as roles,
+                COALESCE(
+                  json_agg(
+                    DISTINCT p.name
+                  ) FILTER (WHERE p.name IS NOT NULL), 
+                  '[]'
+                ) as permissions
+         FROM users u
+         LEFT JOIN user_roles ur ON u.id = ur.user_id
+         LEFT JOIN roles r ON ur.role_id = r.id AND r.tenant_id = $2
+         LEFT JOIN role_permissions rp ON r.id = rp.role_id
+         LEFT JOIN permissions p ON rp.permission_id = p.id
+         WHERE u.id = $1 AND u.tenant_id = $2
+         GROUP BY u.id, u.email, u.role`,
+        [userId, tenantId]
+      )
+      
+      if (result.rows.length === 0) {
+        return { permissions: [], roles: [] }
+      }
+      
+      return {
+        permissions: result.rows[0].permissions || [],
+        roles: result.rows[0].roles || []
+      }
+    } catch (error) {
+      console.log('Error getting user permissions, falling back:', error.message)
+      return { permissions: [], roles: [] }
+    }
+  }
 }

@@ -1,0 +1,1323 @@
+import express from 'express'
+import cors from 'cors'
+import jwt from 'jsonwebtoken'
+import { WebSocketServer } from 'ws'
+import { createServer } from 'http'
+import dotenv from 'dotenv'
+import multer from 'multer'
+import { User } from './models/User.js'
+import { Tenant } from './models/Tenant.js'
+import { TrackedObject } from './models/TrackedObject.js'
+import { LocationHistory } from './models/LocationHistory.js'
+import { query } from './database.js'
+import { RBACService } from './services/RBACService.js'
+import { minioService } from './services/MinioService.js'
+import { 
+  requirePermission, 
+  requireObjectAccess, 
+  requireUserManagement,
+  attachPermissions 
+} from './middleware/rbac.js'
+
+dotenv.config()
+
+const app = express()
+const server = createServer(app)
+const wss = new WebSocketServer({ server })
+
+// Middleware
+app.use(cors())
+app.use(express.json())
+
+// Configure multer for image uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images only
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only image files are allowed'), false)
+    }
+  }
+})
+
+// JWT Secret
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
+
+// Auth middleware with RBAC
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization']
+  const token = authHeader && authHeader.split(' ')[1]
+
+  if (!token) {
+    return res.status(401).json({ message: 'Access token required' })
+  }
+
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
+    if (err) {
+      return res.status(403).json({ message: 'Invalid token' })
+    }
+    
+    req.user = user
+    
+    // Check for tenant ID in custom header (for workspace switching)
+    const headerTenantId = req.headers['x-tenant-id'] ? parseInt(req.headers['x-tenant-id']) : null
+    // Check if there's a tenant ID in the path (for tenant-specific API calls)
+    const pathTenantId = req.params.tenantId ? parseInt(req.params.tenantId) : null
+    let effectiveTenantId = user.tenantId // Default to JWT tenant ID
+    
+    if (headerTenantId || pathTenantId) {
+      const requestedTenantId = headerTenantId || pathTenantId
+      
+      // Verify user has access to the requested tenant
+      try {
+        const userTenants = await User.getUserTenants(user.id)
+        const hasAccess = userTenants.some(t => t.id === requestedTenantId)
+        
+        if (!hasAccess) {
+          return res.status(403).json({ message: 'Access denied to this workspace' })
+        }
+        
+        effectiveTenantId = requestedTenantId
+      } catch (error) {
+        console.error('Error checking tenant access:', error)
+        return res.status(500).json({ message: 'Server error' })
+      }
+    }
+    
+    // Use effective tenant ID for permissions
+    req.user.effectiveTenantId = effectiveTenantId
+    
+    // Attach permissions and roles to user for the effective tenant
+    try {
+      // For multi-tenant API calls, we need to get the user ID for the specific tenant
+      let effectiveUserId = user.id
+      
+      if (effectiveTenantId !== user.tenantId) {
+        // Get the user ID for this specific tenant
+        const tenantUserResult = await query(
+          'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+          [user.email, effectiveTenantId]
+        )
+        
+        if (tenantUserResult.rows.length > 0) {
+          effectiveUserId = tenantUserResult.rows[0].id
+        }
+      }
+      
+      req.user.effectiveUserId = effectiveUserId
+      req.user.permissions = await RBACService.getUserPermissions(effectiveUserId, effectiveTenantId)
+      req.user.roles = await RBACService.getUserRoles(effectiveUserId, effectiveTenantId)
+    } catch (error) {
+      console.error('Error loading user permissions:', error)
+      req.user.permissions = []
+      req.user.roles = []
+    }
+    
+    next()
+  })
+}
+
+// Routes
+
+// Health check
+app.get('/api/health', async (req, res) => {
+  try {
+    // Test database connection
+    await query('SELECT 1')
+    res.json({ 
+      status: 'OK', 
+      timestamp: new Date().toISOString(),
+      database: 'connected'
+    })
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'ERROR', 
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message
+    })
+  }
+})
+
+// Auth routes
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body
+
+    const user = await User.findByEmail(email)
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials' })
+    }
+
+    const validPassword = await User.verifyPassword(password, user.password)
+    if (!validPassword) {
+      return res.status(401).json({ message: 'Invalid credentials' })
+    }
+
+    const token = jwt.sign(
+      { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role,
+        tenantId: user.tenant.id 
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    )
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        tenant: user.tenant
+      }
+    })
+  } catch (error) {
+    console.error('Login error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/auth/validate', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenant: user.tenant,
+      permissions: req.user.permissions || [],
+      roles: req.user.roles || []
+    })
+  } catch (error) {
+    console.error('Validate error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Tenant Management Routes
+
+// Get all tenants user has access to
+app.get('/api/tenants', authenticateToken, async (req, res) => {
+  try {
+    const tenants = await User.getUserTenants(req.user.id)
+    res.json(tenants)
+  } catch (error) {
+    console.error('Get user tenants error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get specific tenant info
+app.get('/api/tenants/:tenantId', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    // Verify user has access to this tenant
+    const userTenants = await User.getUserTenants(req.user.id)
+    const hasAccess = userTenants.some(t => t.id === tenantId)
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied to this tenant' })
+    }
+    
+    const tenant = await Tenant.findById(tenantId)
+    if (!tenant) {
+      return res.status(404).json({ message: 'Tenant not found' })
+    }
+    
+    const stats = await Tenant.getStats(tenantId)
+    
+    res.json({
+      ...tenant,
+      stats
+    })
+  } catch (error) {
+    console.error('Get tenant error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get user info for specific tenant (for tenant switching)
+app.get('/api/tenants/:tenantId/user', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    const user = await User.findByIdAndTenant(req.user.id, tenantId)
+    if (!user) {
+      return res.status(403).json({ message: 'Access denied to this tenant' })
+    }
+    
+    // Get permissions for this tenant
+    const permissions = await RBACService.getUserPermissions(user.id, tenantId)
+    const roles = await RBACService.getUserRoles(user.id, tenantId)
+    
+    res.json({
+      ...user,
+      permissions,
+      roles
+    })
+  } catch (error) {
+    console.error('Get tenant user error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new tenant - allow any authenticated user to create their own workspace
+app.post('/api/tenants', authenticateToken, async (req, res) => {
+  try {
+    const { name } = req.body
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Tenant name is required' })
+    }
+    
+    // Create the new tenant
+    const tenant = await Tenant.create({ name: name.trim() })
+    
+    // Initialize RBAC system for the new tenant
+    const roles = await RBACService.initializeTenantRBAC(tenant.id)
+    
+    // Create a user record for the creator in the new tenant with admin role
+    const newUserData = {
+      email: req.user.email,
+      password: 'placeholder', // This won't be used since user already exists
+      role: 'admin',
+      tenantId: tenant.id
+    }
+    
+    // Check if user already exists in this tenant (shouldn't happen, but safety check)
+    const existingUser = await query(
+      'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+      [req.user.email, tenant.id]
+    )
+    
+    if (existingUser.rows.length === 0) {
+      // Create user record in new tenant
+      await query(
+        `INSERT INTO users (email, password_hash, role, tenant_id) 
+         SELECT $1, password_hash, $2, $3 FROM users WHERE id = $4`,
+        [req.user.email, 'admin', tenant.id, req.user.id]
+      )
+      
+      // Assign super_admin role to the creator in the new tenant
+      if (roles.super_admin) {
+        const newUser = await query(
+          'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+          [req.user.email, tenant.id]
+        )
+        
+        if (newUser.rows.length > 0) {
+          await RBACService.assignRoleToUser(
+            newUser.rows[0].id, 
+            roles.super_admin.id, 
+            newUser.rows[0].id
+          )
+          console.log(`Assigned super_admin role to user ${req.user.email} in tenant ${tenant.id}`)
+        }
+      }
+    }
+    
+    res.status(201).json(tenant)
+  } catch (error) {
+    console.error('Create tenant error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Get all tenants with statistics
+app.get('/api/admin/tenants', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const tenants = await Tenant.findAll()
+    
+    // Get statistics for each tenant
+    const tenantsWithStats = await Promise.all(
+      tenants.map(async (tenant) => {
+        const stats = await Tenant.getStats(tenant.id)
+        return {
+          ...tenant,
+          stats
+        }
+      })
+    )
+    
+    res.json(tenantsWithStats)
+  } catch (error) {
+    console.error('Get all tenants error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Get all objects across all tenants
+app.get('/api/admin/objects', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT o.*, t.name as tenant_name, u.email as created_by_email
+       FROM objects o
+       LEFT JOIN tenants t ON o.tenant_id = t.id
+       LEFT JOIN users u ON o.created_by = u.id AND o.tenant_id = u.tenant_id
+       ORDER BY o.created_at DESC`
+    )
+    
+    res.json(result.rows)
+  } catch (error) {
+    console.error('Get all objects error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Get objects for specific tenant
+app.get('/api/admin/tenants/:tenantId/objects', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    const result = await query(
+      `SELECT o.*, u.email as created_by_email
+       FROM objects o
+       LEFT JOIN users u ON o.created_by = u.id AND o.tenant_id = u.tenant_id
+       WHERE o.tenant_id = $1
+       ORDER BY o.created_at DESC`,
+      [tenantId]
+    )
+    
+    res.json(result.rows)
+  } catch (error) {
+    console.error('Get tenant objects error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Delete tenant and all its data
+app.delete('/api/admin/tenants/:tenantId', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    // Prevent deletion of tenant ID 1 (default tenant)
+    if (tenantId === 1) {
+      return res.status(400).json({ message: 'Cannot delete the default tenant' })
+    }
+    
+    // Check if tenant exists
+    const tenant = await Tenant.findById(tenantId)
+    if (!tenant) {
+      return res.status(404).json({ message: 'Tenant not found' })
+    }
+    
+    // Delete tenant (cascade will handle related data)
+    const deleted = await Tenant.delete(tenantId)
+    
+    if (deleted) {
+      res.json({ message: 'Tenant and all associated data deleted successfully' })
+    } else {
+      res.status(404).json({ message: 'Tenant not found' })
+    }
+  } catch (error) {
+    console.error('Delete tenant error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Delete specific object
+app.delete('/api/admin/objects/:objectId', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.objectId)
+    
+    // Get object details first
+    const objectResult = await query(
+      'SELECT * FROM objects WHERE id = $1',
+      [objectId]
+    )
+    
+    if (objectResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+    
+    // Delete the object (cascade will handle location_history)
+    const deleteResult = await query(
+      'DELETE FROM objects WHERE id = $1 RETURNING id',
+      [objectId]
+    )
+    
+    if (deleteResult.rowCount > 0) {
+      res.json({ message: 'Object deleted successfully' })
+    } else {
+      res.status(404).json({ message: 'Object not found' })
+    }
+  } catch (error) {
+    console.error('Delete object error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// RBAC Routes
+
+// Get all roles for tenant
+app.get('/api/rbac/roles', authenticateToken, requirePermission('roles.read'), async (req, res) => {
+  try {
+    const roles = await RBACService.getRoles(req.user.effectiveTenantId)
+    res.json(roles)
+  } catch (error) {
+    console.error('Get roles error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new role
+app.post('/api/rbac/roles', authenticateToken, requirePermission('roles.create'), async (req, res) => {
+  try {
+    const role = await RBACService.createRole(req.body, req.user.effectiveTenantId, req.user.effectiveUserId)
+    res.status(201).json(role)
+  } catch (error) {
+    console.error('Create role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get all permissions
+app.get('/api/rbac/permissions', authenticateToken, requirePermission('roles.read'), async (req, res) => {
+  try {
+    const permissions = await RBACService.getPermissions()
+    res.json(permissions)
+  } catch (error) {
+    console.error('Get permissions error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get all groups for tenant
+app.get('/api/rbac/groups', authenticateToken, requirePermission('groups.read'), async (req, res) => {
+  try {
+    const groups = await RBACService.getGroups(req.user.effectiveTenantId)
+    res.json(groups)
+  } catch (error) {
+    console.error('Get groups error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new group
+app.post('/api/rbac/groups', authenticateToken, requirePermission('groups.create'), async (req, res) => {
+  try {
+    const group = await RBACService.createGroup(req.body, req.user.effectiveTenantId, req.user.effectiveUserId)
+    res.status(201).json(group)
+  } catch (error) {
+    console.error('Create group error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Assign role to user
+app.post('/api/rbac/users/:userId/roles', authenticateToken, requireUserManagement(), async (req, res) => {
+  try {
+    const { roleId } = req.body
+    const userId = parseInt(req.params.userId)
+    
+    const assignment = await RBACService.assignRoleToUser(userId, roleId, req.user.id)
+    res.json(assignment)
+  } catch (error) {
+    console.error('Assign role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Remove role from user
+app.delete('/api/rbac/users/:userId/roles/:roleId', authenticateToken, requireUserManagement(), async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId)
+    const roleId = parseInt(req.params.roleId)
+    
+    const success = await RBACService.removeRoleFromUser(userId, roleId)
+    if (success) {
+      res.json({ message: 'Role removed successfully' })
+    } else {
+      res.status(404).json({ message: 'Role assignment not found' })
+    }
+  } catch (error) {
+    console.error('Remove role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Add user to group
+app.post('/api/rbac/groups/:groupId/users', authenticateToken, requirePermission('groups.update'), async (req, res) => {
+  try {
+    const { userId } = req.body
+    const groupId = parseInt(req.params.groupId)
+    
+    const assignment = await RBACService.addUserToGroup(userId, groupId, req.user.id)
+    res.json(assignment)
+  } catch (error) {
+    console.error('Add user to group error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Remove user from group
+app.delete('/api/rbac/groups/:groupId/users/:userId', authenticateToken, requirePermission('groups.update'), async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId)
+    const groupId = parseInt(req.params.groupId)
+    
+    const success = await RBACService.removeUserFromGroup(userId, groupId)
+    if (success) {
+      res.json({ message: 'User removed from group successfully' })
+    } else {
+      res.status(404).json({ message: 'User group assignment not found' })
+    }
+  } catch (error) {
+    console.error('Remove user from group error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get user's permissions and roles
+app.get('/api/rbac/users/:userId', authenticateToken, requireUserManagement(), async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId)
+    const permissions = await RBACService.getUserPermissions(userId, req.user.effectiveTenantId)
+    const roles = await RBACService.getUserRoles(userId, req.user.effectiveTenantId)
+    
+    res.json({ permissions, roles })
+  } catch (error) {
+    console.error('Get user RBAC info error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get all users for admin management
+app.get('/api/users', authenticateToken, requirePermission('users.read'), async (req, res) => {
+  try {
+    const users = await User.findByTenant(req.user.effectiveTenantId)
+    res.json(users)
+  } catch (error) {
+    console.error('Get users error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Create new user
+app.post('/api/users', authenticateToken, requirePermission('users.create'), async (req, res) => {
+  try {
+    const { email, password, name, roleId } = req.body
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' })
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findByEmail(email)
+    if (existingUser) {
+      return res.status(409).json({ message: 'User with this email already exists' })
+    }
+
+    const userData = {
+      email,
+      password,
+      name,
+      tenantId: req.user.effectiveTenantId,
+      role: 'user' // Default role
+    }
+
+    const newUser = await User.create(userData)
+
+    // Assign initial role if provided
+    if (roleId) {
+      await RBACService.assignRoleToUser(newUser.id, parseInt(roleId), req.user.effectiveUserId)
+    }
+
+    res.status(201).json({
+      id: newUser.id,
+      email: newUser.email,
+      name: newUser.name,
+      created_at: newUser.created_at
+    })
+  } catch (error) {
+    console.error('Create user error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Delete role
+app.delete('/api/rbac/roles/:roleId', authenticateToken, requirePermission('roles.delete'), async (req, res) => {
+  try {
+    const roleId = parseInt(req.params.roleId)
+    
+    const success = await RBACService.deleteRole(roleId, req.user.effectiveTenantId)
+    if (success) {
+      res.json({ message: 'Role deleted successfully' })
+    } else {
+      res.status(404).json({ message: 'Role not found or cannot be deleted' })
+    }
+  } catch (error) {
+    console.error('Delete role error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Object routes
+app.get('/api/objects', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const { timeRange, types, tags } = req.query
+    
+    const filters = {}
+    if (types) {
+      filters.types = types.split(',')
+    }
+    if (tags) {
+      filters.tags = tags.split(',')
+    }
+    if (timeRange) {
+      filters.timeRange = timeRange
+    }
+
+    const objects = await TrackedObject.findByTenant(req.user.effectiveTenantId, filters)
+    res.json(objects)
+  } catch (error) {
+    console.error('Get objects error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.post('/api/objects', authenticateToken, requirePermission('objects.create'), async (req, res) => {
+  try {
+    const { name, type, lat, lng, description, tags, customFields } = req.body
+
+    if (!name || !type || lat === undefined || lng === undefined) {
+      return res.status(400).json({ message: 'Missing required fields' })
+    }
+
+    const objectData = {
+      name,
+      type,
+      lat: parseFloat(lat),
+      lng: parseFloat(lng),
+      description,
+      tags,
+      customFields,
+      tenantId: req.user.effectiveTenantId,
+      createdBy: req.user.effectiveUserId
+    }
+
+    const newObject = await TrackedObject.create(objectData)
+
+    // Add initial location to history
+    await LocationHistory.create(
+      newObject.id,
+      newObject.lat,
+      newObject.lng,
+      'Initial location',
+      req.user.effectiveTenantId
+    )
+
+    // Broadcast to WebSocket clients for this tenant only
+    wss.clients.forEach(client => {
+      if (client.readyState === 1 && client.tenantId === req.user.effectiveTenantId) { // WebSocket.OPEN
+        client.send(JSON.stringify({
+          type: 'object_created',
+          tenantId: req.user.effectiveTenantId,
+          data: newObject
+        }))
+      }
+    })
+
+    res.status(201).json(newObject)
+  } catch (error) {
+    console.error('Create object error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.delete('/api/objects/:id', authenticateToken, requireObjectAccess('delete'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    
+    if (isNaN(objectId)) {
+      return res.status(400).json({ message: 'Invalid object ID' })
+    }
+
+    const result = await TrackedObject.delete(
+      objectId, 
+      req.user.effectiveTenantId, 
+      req.user.effectiveUserId, 
+      req.user.role
+    )
+
+    if (result.success) {
+      // Broadcast deletion to WebSocket clients for this tenant only
+      wss.clients.forEach(client => {
+        if (client.readyState === 1 && client.tenantId === req.user.effectiveTenantId) { // WebSocket.OPEN
+          client.send(JSON.stringify({
+            type: 'object_deleted',
+            tenantId: req.user.effectiveTenantId,
+            data: { id: objectId }
+          }))
+        }
+      })
+
+      res.json({ message: result.message })
+    } else {
+      const statusCode = result.error.includes('Permission denied') ? 403 : 404
+      res.status(statusCode).json({ message: result.error })
+    }
+  } catch (error) {
+    console.error('Delete object error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get objects with location history for path visualization
+app.get('/api/objects/with-paths', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const { timeRange, types, tags, limit = 50 } = req.query
+    
+    // Build filters
+    const filters = {}
+    if (types) {
+      filters.types = types.split(',')
+    }
+    if (tags) {
+      filters.tags = tags.split(',')
+    }
+    if (timeRange) {
+      filters.timeRange = timeRange
+    }
+
+    // Get objects
+    const objects = await TrackedObject.findByTenant(req.user.effectiveTenantId, filters)
+    
+    // Get location history for each object
+    const objectsWithPaths = await Promise.all(
+      objects.map(async (object) => {
+        const locationHistory = await query(
+          `SELECT id, lat, lng, timestamp, image_id
+           FROM location_history 
+           WHERE object_id = $1 AND tenant_id = $2
+           ORDER BY timestamp ASC
+           LIMIT $3`,
+          [object.id, req.user.effectiveTenantId, parseInt(limit)]
+        )
+        
+        return {
+          ...object,
+          locationHistory: locationHistory.rows.map(row => ({
+            id: row.id,
+            lat: parseFloat(row.lat),
+            lng: parseFloat(row.lng),
+            timestamp: row.timestamp,
+            imageId: row.image_id
+          }))
+        }
+      })
+    )
+    
+    res.json(objectsWithPaths)
+  } catch (error) {
+    console.error('Get objects with paths error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/objects/types', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT DISTINCT type, COUNT(*) as count 
+       FROM objects 
+       WHERE tenant_id = $1 
+       GROUP BY type 
+       ORDER BY count DESC, type ASC`,
+      [req.user.effectiveTenantId]
+    )
+    
+    const types = result.rows.map(row => ({
+      name: row.type,
+      count: parseInt(row.count)
+    }))
+    
+    res.json(types)
+  } catch (error) {
+    console.error('Get object types error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/objects/tags', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT UNNEST(tags) as tag, COUNT(*) as count 
+       FROM objects 
+       WHERE tenant_id = $1 AND tags IS NOT NULL AND array_length(tags, 1) > 0
+       GROUP BY tag 
+       ORDER BY count DESC, tag ASC 
+       LIMIT 20`,
+      [req.user.effectiveTenantId]
+    )
+    
+    const tags = result.rows.map(row => ({
+      name: row.tag,
+      count: parseInt(row.count)
+    }))
+    
+    res.json(tags)
+  } catch (error) {
+    console.error('Get object tags error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get image counts for all objects
+app.get('/api/objects/image-counts', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT 
+         object_id as "objectId",
+         COUNT(*) as "imageCount"
+       FROM images 
+       WHERE tenant_id = $1 AND object_id IS NOT NULL
+       GROUP BY object_id`,
+      [req.user.effectiveTenantId]
+    )
+    
+    res.json(result.rows)
+  } catch (error) {
+    console.error('Get object image counts error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/objects/:id/locations', authenticateToken, async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    const history = await LocationHistory.findByObject(objectId, req.user.effectiveTenantId)
+    res.json(history)
+  } catch (error) {
+    console.error('Get locations error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Update object location
+app.put('/api/objects/:id/location', authenticateToken, requirePermission('objects.update'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    const { lat, lng } = req.body
+
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return res.status(400).json({ message: 'Invalid coordinates. Lat and lng must be numbers.' })
+    }
+
+    // Verify object exists and user has access
+    const object = await TrackedObject.findById(objectId, req.user.effectiveTenantId)
+    if (!object) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+
+    // Update object's current location
+    await query(
+      'UPDATE objects SET lat = $1, lng = $2, last_update = NOW() WHERE id = $3 AND tenant_id = $4',
+      [lat, lng, objectId, req.user.effectiveTenantId]
+    )
+
+    // Add to location history
+    await query(
+      'INSERT INTO location_history (object_id, lat, lng, timestamp, tenant_id) VALUES ($1, $2, $3, NOW(), $4)',
+      [objectId, lat, lng, req.user.effectiveTenantId]
+    )
+
+    // Broadcast location update via WebSocket
+    const locationUpdate = {
+      type: 'location_update',
+      objectId: objectId,
+      lat: lat,
+      lng: lng,
+      timestamp: new Date().toISOString(),
+      tenantId: req.user.effectiveTenantId
+    }
+
+    // Send to all clients in the same tenant
+    wss.clients.forEach(client => {
+      if (client.readyState === client.OPEN && client.tenantId === req.user.effectiveTenantId) {
+        client.send(JSON.stringify(locationUpdate))
+      }
+    })
+
+    res.json({ 
+      message: 'Location updated successfully',
+      lat: lat,
+      lng: lng,
+      timestamp: new Date().toISOString()
+    })
+  } catch (error) {
+    console.error('Update location error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Image upload endpoint
+app.post('/api/objects/:id/images', authenticateToken, requirePermission('objects.update'), upload.single('image'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' })
+    }
+
+    // Verify object exists and user has access
+    const object = await TrackedObject.findById(objectId, req.user.effectiveTenantId)
+    if (!object) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+
+    // Upload image to MinIO
+    const uploadResult = await minioService.uploadImage(
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype
+    )
+
+    if (!uploadResult.success) {
+      return res.status(500).json({ message: 'Failed to upload image', error: uploadResult.error })
+    }
+
+    // Store image metadata in database
+    const imageResult = await query(
+      `INSERT INTO images (object_id, object_name, file_name, content_type, file_size, image_url, tenant_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, object_name, file_name, image_url, created_at`,
+      [
+        objectId,
+        uploadResult.objectName,
+        uploadResult.fileName,
+        req.file.mimetype,
+        req.file.size,
+        uploadResult.imageUrl,
+        req.user.effectiveTenantId,
+        req.user.effectiveUserId
+      ]
+    )
+
+    const imageRecord = imageResult.rows[0]
+
+    // Optionally link to location history if locationHistoryId is provided
+    if (req.body.locationHistoryId) {
+      await query(
+        `UPDATE location_history SET image_id = $1 WHERE id = $2 AND tenant_id = $3`,
+        [imageRecord.id, parseInt(req.body.locationHistoryId), req.user.effectiveTenantId]
+      )
+    }
+
+    res.status(201).json({
+      id: imageRecord.id,
+      objectName: imageRecord.object_name,
+      fileName: imageRecord.file_name,
+      imageUrl: imageRecord.image_url,
+      createdAt: imageRecord.created_at
+    })
+  } catch (error) {
+    console.error('Upload image error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get images for an object
+app.get('/api/objects/:id/images', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    const { limit = 50, offset = 0, startTime, endTime } = req.query
+
+    // Verify object exists and user has access
+    const object = await TrackedObject.findById(objectId, req.user.effectiveTenantId)
+    if (!object) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+
+    // Build query with optional time filtering
+    let query_text = `
+      SELECT i.id, i.object_name, i.file_name, i.image_url, i.created_at,
+             i.content_type, i.file_size
+      FROM images i
+      WHERE i.object_id = $1 AND i.tenant_id = $2
+    `
+    let queryParams = [objectId, req.user.effectiveTenantId]
+    
+    // Add time filtering if provided
+    if (startTime && endTime) {
+      query_text += ` AND i.created_at BETWEEN $3 AND $4`
+      queryParams.push(startTime, endTime)
+      query_text += ` ORDER BY i.created_at DESC LIMIT $5 OFFSET $6`
+      queryParams.push(parseInt(limit), parseInt(offset))
+    } else {
+      query_text += ` ORDER BY i.created_at DESC LIMIT $3 OFFSET $4`
+      queryParams.push(parseInt(limit), parseInt(offset))
+    }
+
+    const result = await query(query_text, queryParams)
+
+    const images = result.rows.map(row => ({
+      id: row.id,
+      objectName: row.object_name,
+      fileName: row.file_name,
+      imageUrl: row.image_url,
+      createdAt: row.created_at,
+      contentType: row.content_type,
+      fileSize: row.file_size
+    }))
+
+    res.json(images)
+  } catch (error) {
+    console.error('Get images error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get recent images across all objects
+app.get('/api/images/recent', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10
+    
+    const result = await query(
+      `SELECT i.id, i.object_name, i.file_name, i.image_url, i.created_at,
+              o.id as object_id, o.name as object_display_name, o.type as object_type,
+              o.lat, o.lng
+       FROM images i
+       LEFT JOIN objects o ON i.object_id = o.id
+       WHERE i.tenant_id = $1
+       ORDER BY i.created_at DESC
+       LIMIT $2`,
+      [req.user.effectiveTenantId, limit]
+    )
+    
+    const images = result.rows.map(row => ({
+      id: row.id,
+      objectName: row.object_display_name || row.object_name,
+      fileName: row.file_name,
+      imageUrl: row.image_url,
+      createdAt: row.created_at,
+      object: row.object_id ? {
+        id: row.object_id,
+        name: row.object_display_name,
+        type: row.object_type,
+        lat: parseFloat(row.lat),
+        lng: parseFloat(row.lng)
+      } : null
+    }))
+    
+    res.json(images)
+  } catch (error) {
+    console.error('Get recent images error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Delete an image
+app.delete('/api/images/:id', authenticateToken, requirePermission('objects.update'), async (req, res) => {
+  try {
+    const imageId = parseInt(req.params.id)
+
+    // Get image details
+    const imageResult = await query(
+      `SELECT object_name, file_name FROM images WHERE id = $1 AND tenant_id = $2`,
+      [imageId, req.user.effectiveTenantId]
+    )
+
+    if (imageResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Image not found' })
+    }
+
+    const image = imageResult.rows[0]
+
+    // Delete from MinIO
+    await minioService.deleteImage(image.object_name)
+
+    // Delete from database
+    await query(
+      `DELETE FROM images WHERE id = $1 AND tenant_id = $2`,
+      [imageId, req.user.effectiveTenantId]
+    )
+
+    res.json({ message: 'Image deleted successfully' })
+  } catch (error) {
+    console.error('Delete image error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Object Type Configuration endpoints
+app.get('/api/object-type-configs', authenticateToken, requirePermission('types.read'), async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT type_name, emoji, color 
+       FROM object_type_configs 
+       WHERE tenant_id = $1 
+       ORDER BY type_name ASC`,
+      [req.user.effectiveTenantId]
+    )
+    
+    const configs = result.rows.reduce((acc, row) => {
+      acc[row.type_name] = {
+        emoji: row.emoji,
+        color: row.color
+      }
+      return acc
+    }, {})
+    
+    res.json(configs)
+  } catch (error) {
+    console.error('Get object type configs error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.post('/api/object-type-configs', authenticateToken, requirePermission('types.create'), async (req, res) => {
+  try {
+    const { typeName, emoji, color } = req.body
+
+    if (!typeName || !emoji) {
+      return res.status(400).json({ message: 'Type name and emoji are required' })
+    }
+
+    // Validate emoji (basic check for emoji characters)
+    const emojiRegex = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u
+    if (!emojiRegex.test(emoji)) {
+      return res.status(400).json({ message: 'Invalid emoji format' })
+    }
+
+    const result = await query(
+      `INSERT INTO object_type_configs (type_name, emoji, color, tenant_id) 
+       VALUES ($1, $2, $3, $4) 
+       ON CONFLICT (type_name, tenant_id) 
+       DO UPDATE SET emoji = $2, color = $3, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [typeName.toLowerCase(), emoji, color || '#6b7280', req.user.effectiveTenantId]
+    )
+
+    res.json({
+      typeName: result.rows[0].type_name,
+      emoji: result.rows[0].emoji,
+      color: result.rows[0].color
+    })
+  } catch (error) {
+    console.error('Create/update object type config error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.delete('/api/object-type-configs/:typeName', authenticateToken, requirePermission('types.delete'), async (req, res) => {
+  try {
+    const typeName = req.params.typeName.toLowerCase()
+    
+    const result = await query(
+      `DELETE FROM object_type_configs 
+       WHERE type_name = $1 AND tenant_id = $2`,
+      [typeName, req.user.effectiveTenantId]
+    )
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Object type config not found' })
+    }
+
+    res.json({ message: 'Object type config deleted successfully' })
+  } catch (error) {
+    console.error('Delete object type config error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// WebSocket connection handling
+wss.on('connection', (ws) => {
+  // Store tenant information for this connection
+  ws.tenantId = null
+  
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message)
+      
+      // Handle different message types
+      switch (data.type) {
+        case 'ping':
+          ws.send(JSON.stringify({ type: 'pong' }))
+          break
+        case 'join_tenant':
+          // Associate this WebSocket connection with a tenant
+          ws.tenantId = data.tenantId
+          console.log(`WebSocket client joined tenant ${data.tenantId}`)
+          ws.send(JSON.stringify({ 
+            type: 'tenant_joined', 
+            tenantId: data.tenantId,
+            message: `Joined tenant ${data.tenantId}` 
+          }))
+          break
+      }
+    } catch (error) {
+      console.error('WebSocket message error:', error)
+    }
+  })
+
+  // Send initial connection confirmation
+  ws.send(JSON.stringify({ 
+    type: 'connected', 
+    message: 'WebSocket connection established' 
+  }))
+})
+
+// Simulate real-time location updates
+setInterval(async () => {
+  try {
+    // Get all active objects from all tenants for simulation
+    const result = await query('SELECT id, lat, lng, tenant_id FROM objects WHERE status = $1', ['active'])
+    
+    for (const obj of result.rows) {
+      // 30% chance to update each object
+      if (Math.random() > 0.7) {
+        const latOffset = (Math.random() - 0.5) * 0.001
+        const lngOffset = (Math.random() - 0.5) * 0.001
+        
+        const newLat = parseFloat(obj.lat) + latOffset
+        const newLng = parseFloat(obj.lng) + lngOffset
+
+        // Update object location in database
+        const updatedObject = await TrackedObject.updateLocation(obj.id, newLat, newLng, obj.tenant_id)
+        
+        if (updatedObject) {
+          // Add to location history
+          await LocationHistory.create(
+            obj.id,
+            newLat,
+            newLng,
+            'Simulated update',
+            obj.tenant_id
+          )
+
+          // Broadcast update to WebSocket clients for this tenant only
+          wss.clients.forEach(client => {
+            if (client.readyState === 1 && client.tenantId === obj.tenant_id) {
+              client.send(JSON.stringify({
+                type: 'location_update',
+                tenantId: obj.tenant_id,
+                data: updatedObject
+              }))
+            }
+          })
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Location simulation error:', error)
+  }
+}, 10000) // Update every 10 seconds
+
+const PORT = process.env.PORT || 3001
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`)
+})
