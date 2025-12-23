@@ -1,5 +1,5 @@
 /**
- * Vitest Configuration for Unit Tests
+ * Vitest Configuration for React Component Tests
  */
 
 import { defineConfig } from 'vitest/config'
@@ -8,10 +8,10 @@ import path from 'path'
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'node',
-    setupFiles: ['./tests/setup.js'],
-    include: ['tests/unit/**/*.test.js'],
-    exclude: ['tests/integration/**/*.test.js', 'tests/unit/**/*.test.jsx', 'node_modules/**'],
+    environment: 'jsdom',
+    setupFiles: ['./tests/setup.js', './tests/setup-react.js'],
+    include: ['tests/unit/**/*.test.jsx'],
+    exclude: ['tests/integration/**/*.test.js', 'tests/unit/**/*.test.js', 'node_modules/**'],
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: [

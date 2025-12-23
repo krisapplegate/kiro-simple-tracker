@@ -39,7 +39,9 @@ jobs:
       run: npm ci
     
     - name: Run unit tests
-      run: npm run test:unit
+      run: |
+        npm run test:unit
+        npm run test:react
       env:
         NODE_ENV: test
         JWT_SECRET: test-jwt-secret-key-for-ci
