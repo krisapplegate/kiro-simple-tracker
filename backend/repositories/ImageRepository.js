@@ -23,7 +23,7 @@ export class ImageRepository extends BaseRepository {
         o.name as object_name,
         o.type as object_type
       FROM ${this.tableName} i
-      JOIN tracked_objects o ON i.object_id = o.id
+      JOIN objects o ON i.object_id = o.id
       WHERE i.tenant_id = $1
       ORDER BY i.uploaded_at DESC
       LIMIT $2

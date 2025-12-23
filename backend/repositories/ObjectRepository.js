@@ -3,7 +3,7 @@ import { query } from '../database.js'
 
 export class ObjectRepository extends BaseRepository {
   constructor() {
-    super('tracked_objects')
+    super('objects')
   }
 
   async findByTenantWithFilters(tenantId, { timeRange, types, tags } = {}) {
@@ -56,7 +56,7 @@ export class ObjectRepository extends BaseRepository {
           ) FILTER (WHERE lh.id IS NOT NULL),
           '[]'::json
         ) as path
-      FROM tracked_objects o
+      FROM objects o
       LEFT JOIN location_history lh ON o.id = lh.object_id
       WHERE o.tenant_id = $1
       GROUP BY o.id
@@ -68,7 +68,7 @@ export class ObjectRepository extends BaseRepository {
 
   async getTypes(tenantId) {
     const result = await query(
-      'SELECT DISTINCT type FROM tracked_objects WHERE tenant_id = $1 ORDER BY type',
+      'SELECT DISTINCT type FROM objects WHERE tenant_id = $1 ORDER BY type',
       [tenantId]
     )
     return result.rows.map(row => row.type)
@@ -77,7 +77,7 @@ export class ObjectRepository extends BaseRepository {
   async getTags(tenantId) {
     const result = await query(`
       SELECT DISTINCT unnest(tags) as tag 
-      FROM tracked_objects 
+      FROM objects 
       WHERE tenant_id = $1 AND tags IS NOT NULL 
       ORDER BY tag
     `, [tenantId])
@@ -90,7 +90,7 @@ export class ObjectRepository extends BaseRepository {
         o.id,
         o.name,
         COUNT(i.id) as image_count
-      FROM tracked_objects o
+      FROM objects o
       LEFT JOIN images i ON o.id = i.object_id
       WHERE o.tenant_id = $1
       GROUP BY o.id, o.name

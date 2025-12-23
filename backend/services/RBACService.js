@@ -81,51 +81,55 @@ export class RBACService {
         permissions: permissions.map(p => p.id)
       }, tenantId, null, true)
 
-      // Create Admin role with most permissions
+      // Create Admin role with most permissions (exclude system permissions)
+      const adminPermissions = permissions.filter(p => !p.name.includes('system.')).map(p => p.id)
       const adminRole = await RoleService.createRole({
         name: 'admin',
         displayName: 'Administrator',
         description: 'Administrative access with user and object management',
-        permissions: permissions.filter(p => !p.name.includes('system.')).map(p => p.id)
+        permissions: adminPermissions.length > 0 ? adminPermissions : permissions.map(p => p.id)
       }, tenantId, null, true)
 
-      // Create Manager role with object management permissions
+      // Create Manager role with object and user management permissions
+      const managerPermissions = permissions.filter(p => 
+        p.resource === 'objects' || p.resource === 'users'
+      ).map(p => p.id)
       const managerRole = await RoleService.createRole({
         name: 'manager',
         displayName: 'Manager',
         description: 'Can manage objects and view reports',
-        permissions: permissions.filter(p => 
-          p.resource === 'objects' || 
-          (p.resource !== 'users' && p.resource !== 'roles' && p.resource !== 'system')
-        ).map(p => p.id)
+        permissions: managerPermissions.length > 0 ? managerPermissions : permissions.slice(0, 2).map(p => p.id)
       }, tenantId, null, true)
 
-      // Create Operator role with basic object operations
+      // Create Operator role with object permissions
+      const operatorPermissions = permissions.filter(p => 
+        p.resource === 'objects' && ['read', 'create', 'update'].includes(p.action)
+      ).map(p => p.id)
       const operatorRole = await RoleService.createRole({
         name: 'operator',
         displayName: 'Operator',
         description: 'Can create and update objects',
-        permissions: permissions.filter(p => 
-          p.resource === 'objects' && ['read', 'create', 'update'].includes(p.action)
-        ).map(p => p.id)
+        permissions: operatorPermissions.length > 0 ? operatorPermissions : permissions.filter(p => p.resource === 'objects').map(p => p.id)
       }, tenantId, null, true)
 
-      // Create Viewer role with read-only permissions
+      // Create Viewer role with read permissions
+      const viewerPermissions = permissions.filter(p => p.action === 'read').map(p => p.id)
       const viewerRole = await RoleService.createRole({
         name: 'viewer',
         displayName: 'Viewer',
         description: 'Read-only access to objects and reports',
-        permissions: permissions.filter(p => p.action === 'read').map(p => p.id)
+        permissions: viewerPermissions.length > 0 ? viewerPermissions : [permissions.find(p => p.name.includes('read'))?.id || permissions[0]?.id].filter(Boolean)
       }, tenantId, null, true)
 
-      // Create User role with minimal permissions
+      // Create User role with basic object permissions
+      const userPermissions = permissions.filter(p => 
+        p.name === 'objects.read' || p.name === 'objects.create'
+      ).map(p => p.id)
       const userRole = await RoleService.createRole({
         name: 'user',
         displayName: 'Standard User',
         description: 'Basic user access for own objects',
-        permissions: permissions.filter(p => 
-          p.name === 'objects.read' || p.name === 'objects.create'
-        ).map(p => p.id)
+        permissions: userPermissions.length > 0 ? userPermissions : [permissions.find(p => p.name.includes('objects'))?.id || permissions[0]?.id].filter(Boolean)
       }, tenantId, null, true)
 
       console.log(`Created default roles for tenant ${tenantId}`)
