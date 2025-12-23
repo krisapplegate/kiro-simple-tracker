@@ -12,6 +12,7 @@ const DashboardPage = () => {
   const { currentTenant, tenantUser } = useTenant()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selectedObject, setSelectedObject] = useState(null)
+  const [zoomToObject, setZoomToObject] = useState(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [createLocation, setCreateLocation] = useState(null)
   const [filters, setFilters] = useState({
@@ -31,6 +32,12 @@ const DashboardPage = () => {
 
   const handleObjectSelect = (object) => {
     setSelectedObject(object)
+    // Trigger zoom to object location
+    if (object && object.lat && object.lng) {
+      setZoomToObject(object)
+      // Clear zoom trigger after a short delay to allow for future zooms to the same object
+      setTimeout(() => setZoomToObject(null), 100)
+    }
   }
 
   const handleCloseDrawer = () => {
@@ -57,6 +64,7 @@ const DashboardPage = () => {
             open={sidebarOpen}
             filters={filters}
             setFilters={setFilters}
+            onObjectSelect={handleObjectSelect}
           />
         </div>
         
@@ -69,6 +77,7 @@ const DashboardPage = () => {
                 open={true}
                 filters={filters}
                 setFilters={setFilters}
+                onObjectSelect={handleObjectSelect}
               />
             </div>
           </div>
@@ -80,6 +89,7 @@ const DashboardPage = () => {
             onMapClick={handleMapClick}
             onObjectSelect={handleObjectSelect}
             selectedObject={selectedObject}
+            zoomToObject={zoomToObject}
           />
         </div>
         

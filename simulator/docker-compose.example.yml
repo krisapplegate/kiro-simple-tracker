@@ -1,0 +1,90 @@
+# Example Docker Compose configuration for running multiple simulators
+# Copy this file to docker-compose.yml and customize as needed
+
+version: '3.8'
+
+services:
+  # Single simulator with default settings
+  simulator-basic:
+    build: .
+    command: >
+      node src/simulator.js
+      --apiUrl http://host.docker.internal:3001
+      --objectName "Basic Vehicle"
+      --verbose true
+    restart: unless-stopped
+
+  # NYC Taxi simulation
+  simulator-nyc-taxi:
+    build: .
+    command: >
+      node src/simulator.js
+      --apiUrl http://host.docker.internal:3001
+      --objectName "NYC Taxi #1"
+      --objectType "taxi"
+      --pattern street
+      --centerLat 40.7128
+      --centerLng -74.0060
+      --speed 0.0002
+      --updateInterval 3000
+      --verbose true
+    restart: unless-stopped
+
+  # San Francisco delivery truck
+  simulator-sf-delivery:
+    build: .
+    command: >
+      node src/simulator.js
+      --apiUrl http://host.docker.internal:3001
+      --objectName "SF Delivery Truck"
+      --objectType "delivery"
+      --pattern street
+      --centerLat 37.7749
+      --centerLng -122.4194
+      --speed 0.0001
+      --updateInterval 4000
+      --verbose true
+    restart: unless-stopped
+
+  # Circular patrol drone
+  simulator-drone:
+    build: .
+    command: >
+      node src/simulator.js
+      --apiUrl http://host.docker.internal:3001
+      --objectName "Security Drone"
+      --objectType "drone"
+      --pattern circle
+      --centerLat 40.7589
+      --centerLng -73.9851
+      --speed 0.0003
+      --updateInterval 2000
+      --radius 0.005
+      --verbose true
+    restart: unless-stopped
+
+  # Random walking person
+  simulator-pedestrian:
+    build: .
+    command: >
+      node src/simulator.js
+      --apiUrl http://host.docker.internal:3001
+      --objectName "Pedestrian Walker"
+      --objectType "person"
+      --pattern random
+      --centerLat 40.7505
+      --centerLng -73.9934
+      --speed 0.00005
+      --updateInterval 6000
+      --radius 0.003
+      --verbose true
+    restart: unless-stopped
+
+# To run specific simulators:
+# docker-compose up simulator-nyc-taxi simulator-drone
+#
+# To run all simulators:
+# docker-compose up
+#
+# To run in background:
+# docker-compose up -d

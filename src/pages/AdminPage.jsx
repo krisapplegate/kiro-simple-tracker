@@ -8,18 +8,19 @@ import {
   UserCheck, 
   Settings,
   Key,
-  UsersIcon
+  UsersIcon,
+  Building2
 } from 'lucide-react'
 import RoleManagement from '../components/admin/RoleManagement'
 import UserManagement from '../components/admin/UserManagement'
 import GroupManagement from '../components/admin/GroupManagement'
 import PermissionOverview from '../components/admin/PermissionOverview'
+import WorkspaceManagement from '../components/admin/WorkspaceManagement'
 
 const AdminPage = () => {
   const { user } = useAuth()
   const { tenantUser, currentTenant } = useTenant()
-  const [activeTab, setActiveTab] = useState('users')
-
+  
   // Check if user has admin permissions for current tenant
   const hasAdminAccess = tenantUser?.permissions?.some(p => 
     p.name === 'users.manage' || 
@@ -27,6 +28,12 @@ const AdminPage = () => {
     p.name === 'groups.manage' ||
     p.name === 'system.admin'
   )
+
+  // Check if user has super admin permissions (system.admin)
+  const hasSuperAdminAccess = tenantUser?.permissions?.some(p => p.name === 'system.admin')
+  
+  // Default tab based on user permissions
+  const [activeTab, setActiveTab] = useState(hasSuperAdminAccess ? 'workspaces' : 'users')
 
   if (!user || !hasAdminAccess) {
     return <Navigate to={`/tenant/${currentTenant?.id}/dashboard`} replace />
@@ -60,12 +67,19 @@ const AdminPage = () => {
       icon: Key,
       component: PermissionOverview,
       permission: 'roles.read'
+    },
+    {
+      id: 'workspaces',
+      name: 'Workspaces',
+      icon: Building2,
+      component: WorkspaceManagement,
+      permission: 'system.admin'
     }
   ]
 
   // Filter tabs based on user permissions
   const availableTabs = tabs.filter(tab => 
-    user.permissions?.some(p => p.name === tab.permission)
+    tenantUser?.permissions?.some(p => p.name === tab.permission)
   )
 
   const ActiveComponent = availableTabs.find(tab => tab.id === activeTab)?.component || UserManagement
@@ -79,8 +93,15 @@ const AdminPage = () => {
             <div className="flex items-center">
               <Settings className="h-8 w-8 text-primary-600 mr-3" />
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Administration</h1>
-                <p className="text-sm text-gray-500">Manage users, roles, and permissions</p>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {hasSuperAdminAccess ? 'System Administration' : 'Administration'}
+                </h1>
+                <p className="text-sm text-gray-500">
+                  {hasSuperAdminAccess 
+                    ? 'Manage users, roles, permissions, and workspaces across the entire system'
+                    : 'Manage users, roles, and permissions'
+                  }
+                </p>
               </div>
             </div>
             <div className="flex items-center space-x-2">

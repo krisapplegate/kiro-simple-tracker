@@ -1,15 +1,15 @@
-# Setup and Testing Guide
+# Location Tracker - Setup & Testing Guide
 
-This comprehensive guide covers installation, configuration, testing, and troubleshooting for the Location Tracker application.
+Complete guide for installation, testing, and deployment of the multi-tenant location tracking application with RBAC, camera image generation, and admin workspace management.
 
-## 📋 Table of Contents
+## 📋 Quick Navigation
 
-- [Quick Start](#quick-start)
-- [Manual Installation](#manual-installation)
-- [Testing](#testing)
-- [Database Management](#database-management)
-- [Production Deployment](#production-deployment)
-- [Troubleshooting](#troubleshooting)
+- [🚀 Quick Start](#-quick-start)
+- [🧪 Testing](#-testing)
+- [🏗️ Advanced Features](#️-advanced-features)
+- [🔧 Development](#-development)
+- [🚀 Production](#-production)
+- [🔍 Troubleshooting](#-troubleshooting)
 
 ## 🚀 Quick Start
 
@@ -17,15 +17,19 @@ This comprehensive guide covers installation, configuration, testing, and troubl
 - Docker and Docker Compose
 - Git
 
-### Installation
+### Installation & Setup
 
 ```bash
-# Clone repository
+# Clone and start
 git clone <repository-url>
 cd location-tracker
-
-# Start application
 ./docker-start.sh dev
+
+# Apply database migrations (one-time setup)
+docker cp database/migrate_add_images.sql simple-tracker-database-1:/tmp/migrate_add_images.sql
+docker cp database/migrate_add_cascade_deletes.sql simple-tracker-database-1:/tmp/migrate_add_cascade_deletes.sql
+docker-compose exec database psql -U tracker_user -d location_tracker -f /tmp/migrate_add_images.sql
+docker-compose exec database psql -U tracker_user -d location_tracker -f /tmp/migrate_add_cascade_deletes.sql
 
 # Access application
 open http://localhost:3000
@@ -33,275 +37,211 @@ open http://localhost:3000
 
 **Demo Login**: `admin@demo.com` / `password` (Super Administrator)
 
-## 🔧 Manual Installation
-
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 15+
-- npm or yarn
-
-### Steps
-
-1. **Install dependencies:**
-```bash
-npm install
-```
-
-2. **Set up PostgreSQL database:**
-```bash
-# Create database and user
-sudo -u postgres createuser -P tracker_user
-sudo -u postgres createdb -O tracker_user location_tracker
-
-# Initialize schema
-psql -h localhost -U tracker_user -d location_tracker -f database/init.sql
-```
-
-3. **Configure environment:**
-```bash
-cp .env.example .env
-# Edit .env with your database credentials
-```
-
-4. **Start the application:**
-```bash
-npm run dev
-```
+### Key URLs
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:3001
+- **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin)
 
 ## 🧪 Testing
 
-### Quick Testing with Docker
+### Automated Testing
 
 ```bash
-# One-time setup (installs dependencies, browsers, starts app)
-./docker-start.sh test-setup
+# Complete test suite
+./docker-start.sh test-setup  # One-time setup
+./docker-start.sh test        # Run all tests
+./docker-start.sh test-cleanup # Cleanup
 
-# Run all tests
-./docker-start.sh test
-
-# Run specific test suites
-./docker-start.sh test-unit    # Unit tests only
-./docker-start.sh test-api     # API integration tests
-./docker-start.sh test-ui      # UI tests with Playwright
-./docker-start.sh test-rbac    # RBAC-specific tests
+# Individual test suites
+./docker-start.sh test-unit      # Unit tests (63 tests)
+./docker-start.sh test-api       # API integration (25 tests)
+./docker-start.sh test-ui        # UI tests (30+ tests)
+./docker-start.sh test-rbac      # RBAC-specific tests
 ./docker-start.sh test-isolation # Tenant isolation tests
-
-# Cleanup when done
-./docker-start.sh test-cleanup
 ```
 
-### Manual Testing Setup
+### Manual API Testing
 
-```bash
-# Install test dependencies
-npm install --save-dev vitest @vitest/coverage-v8 @playwright/test supertest
-
-# Install Playwright browsers
-npx playwright install
-
-# Start application
-./docker-start.sh dev
-
-# Run tests
-npm run test:unit          # Unit tests
-npm run test:api           # API tests
-npm run test:ui            # UI tests
-```
-
-### Test Categories
-
-#### Unit Tests (63 tests)
-- **RBAC Service**: Permission checking, role management, group management
-- **User Model**: Authentication, password security, user management
-- **Auth Middleware**: Tenant isolation, permission loading
-
-#### Integration Tests (25 tests)
-- **RBAC API**: All RBAC endpoints, permission enforcement
-- **Workspace Creation**: Multi-tenant functionality
-- **Tenant Isolation**: Complete data separation between workspaces
-
-#### UI Tests (30+ tests)
-- **Admin Panel**: Access control, user management interface
-- **Role Management**: Create roles, assign permissions
-- **Group Management**: Create groups, manage members
-
-### RBAC Testing
-
-#### Test User Permissions
 ```bash
 # Get authentication token
 TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
 
-# Check user permissions (should show all 32 permissions)
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq '.permissions'
-
-# List all roles
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/roles | jq
+# Test basic functionality
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/objects | jq
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq '.permissions'
 ```
 
-#### Test Permission Enforcement
+## 🏗️ Advanced Features
+
+### 📸 Camera Image Generation
+
+The simulator generates realistic camera-like images with location and time-based variations.
+
+#### Quick Test
 ```bash
-# Test objects.create permission
-curl -s -X POST http://localhost:3001/api/objects \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Test Object",
-    "type": "vehicle",
-    "lat": 37.7749,
-    "lng": -122.4194
-  }' | jq
+# Build simulator
+cd simulator && ./run-simulator.sh build
 
-# Test role management (requires roles.read)
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/roles | jq
+# Test with images
+./run-simulator.sh run --name "Camera Test" --images --imageInterval 1 --verbose
 ```
+
+#### Advanced Scenarios
+```bash
+# NYC Security Camera
+docker run --rm --network simple-tracker_default location-simulator \
+  --name "NYC Security Camera" --objectType "security-cam" \
+  --apiUrl "http://backend:3001" --includeImages true --imageInterval 2 \
+  --pattern street --centerLat 40.7589 --centerLng -73.9851
+
+# Multi-simulator demo
+./run-simulator.sh multi
+```
+
+#### Image Features
+- **Realistic Rendering**: Day/night lighting, weather effects, urban/suburban scenes
+- **Camera Overlay**: Timestamp, GPS coordinates, object type
+- **Object Storage**: MinIO integration with public URLs
+- **Fallback Support**: SVG placeholders when canvas unavailable
+
+### 🏢 Admin Workspace Management
+
+Super administrators can manage all workspaces and objects across the system.
+
+#### Access Admin Panel
+1. Login as super admin (`admin@demo.com`)
+2. Navigate to Admin → Workspaces tab
+3. View/manage all workspaces and objects
+4. Delete individual objects or entire workspaces (hierarchical)
+
+#### API Testing
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+
+# View all workspaces with statistics
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/admin/tenants | jq
+
+# View all objects across workspaces
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/admin/objects | jq
+
+# Delete workspace (cascades to all data)
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3001/api/admin/tenants/{workspaceId}
+```
+
+#### Workspace Management Features
+- **Hierarchical View**: Expandable workspace display with contained objects
+- **Statistics**: Real-time user, object, and location counts
+- **Cascading Deletion**: Workspace deletion removes ALL associated data
+- **Permission-Based**: Only super admins (`system.admin`) can access
+- **Protection**: Default workspace (ID: 1) cannot be deleted
+
+### 🔐 RBAC System Testing
+
+#### Permission Levels
+- **Super Admin** (`system.admin`): Full system access, workspace management
+- **Admin** (`users.manage`, `roles.manage`): Workspace-level administration
+- **Manager**: Object and user management within workspace
+- **Operator**: Object management only
+- **User**: Basic object access
+- **Viewer**: Read-only access
 
 #### Test Multi-User Scenarios
 ```bash
-# Create test users with different roles
+# Create test users
 node database/manage.js createUser viewer@test.com password123 user 1
 node database/manage.js createUser operator@test.com password123 user 1
 
-# Test viewer permissions (should be read-only)
+# Test permission enforcement
 VIEWER_TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"viewer@test.com","password":"password123"}' | jq -r '.token')
 
 # Should work (read permission)
-curl -s -H "Authorization: Bearer $VIEWER_TOKEN" http://localhost:3001/api/objects | jq
+curl -H "Authorization: Bearer $VIEWER_TOKEN" http://localhost:3001/api/objects
 
 # Should fail (no create permission)
-curl -s -X POST http://localhost:3001/api/objects \
-  -H "Authorization: Bearer $VIEWER_TOKEN" \
+curl -X POST -H "Authorization: Bearer $VIEWER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Test", "type": "vehicle", "lat": 37.7749, "lng": -122.4194}' | jq
+  -d '{"name":"Test","type":"vehicle","lat":37.7749,"lng":-122.4194}' \
+  http://localhost:3001/api/objects
 ```
 
-### Tenant Isolation Testing
+## 🔧 Development
 
+### Manual Installation
 ```bash
-# Test tenant isolation with objects
-TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
+# Prerequisites: Node.js 18+, PostgreSQL 15+
+npm install
+cp .env.example .env
 
-# Create objects in different workspaces
-curl -s -X POST http://localhost:3001/api/objects \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Tenant-Id: 1" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Object in Workspace 1", "type": "test", "lat": 37.7749, "lng": -122.4194}' | jq
+# Database setup
+sudo -u postgres createuser -P tracker_user
+sudo -u postgres createdb -O tracker_user location_tracker
+psql -h localhost -U tracker_user -d location_tracker -f database/init.sql
 
-curl -s -X POST http://localhost:3001/api/objects \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Tenant-Id: 2" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Object in Workspace 2", "type": "test", "lat": 37.7849, "lng": -122.4094}' | jq
-
-# Verify objects are isolated
-echo "Objects in workspace 1:"
-curl -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: 1" http://localhost:3001/api/objects | jq
-
-echo "Objects in workspace 2:"
-curl -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: 2" http://localhost:3001/api/objects | jq
+# Start development
+npm run dev
 ```
 
-## 🗄️ Database Management
-
-### Using Docker Helper Script
+### Database Management
 ```bash
-# Access database shell
-./docker-start.sh db
+# Docker helper commands
+./docker-start.sh db          # Access database shell
+./docker-start.sh health      # Check application health
+./docker-start.sh backup      # Create backup
+./docker-start.sh logs        # View logs
 
-# Check application health
-./docker-start.sh health
-
-# Create database backup
-./docker-start.sh backup
-
-# Restore from backup
-./docker-start.sh restore backup_20231212_143022.sql
-```
-
-### Using Management CLI
-```bash
-# Show database statistics
+# Management CLI
 node database/manage.js stats
-
-# User management
 node database/manage.js listUsers
 node database/manage.js createUser user@example.com password123 user 1
-node database/manage.js deleteUser user@example.com
-
-# Object management
-node database/manage.js listObjects
-node database/manage.js deleteObject 5
-
-# Tenant management
-node database/manage.js createTenant "Company Name"
 ```
 
-### Direct Database Access
+### Simulator Configuration
 ```bash
-# Connect to database (Docker)
-docker-compose exec database psql -U tracker_user -d location_tracker
+# Basic options
+--name "Object Name"           # Display name
+--objectType "vehicle"         # Type: vehicle, drone, security-cam, pedestrian
+--updateInterval 5000          # Update frequency (ms)
+--verbose true                 # Detailed logging
 
-# Connect to database (Local)
-psql -h localhost -U tracker_user -d location_tracker
+# Movement patterns
+--pattern random|circle|square|street
+--centerLat 40.7128 --centerLng -74.0060
+--radius 0.01 --speed 0.0001
 
-# Useful queries
-\dt                                    # List tables
-SELECT * FROM users;                   # List users
-SELECT * FROM roles;                   # List roles
-SELECT * FROM permissions;             # List permissions
-SELECT * FROM objects;                 # List objects
+# Camera features
+--includeImages true --imageInterval 3
 ```
 
-## 🚀 Production Deployment
+## 🚀 Production
 
-### Docker Production Setup
-
-1. **Create production environment file:**
+### Docker Production Deployment
 ```bash
+# Generate secure environment
 cat > .env << EOF
 JWT_SECRET=$(openssl rand -base64 32)
 DB_PASSWORD=$(openssl rand -base64 16)
 NODE_ENV=production
 EOF
-```
 
-2. **Deploy with Docker Compose:**
-```bash
+# Deploy
 ./docker-start.sh prod
-```
-
-3. **Verify deployment:**
-```bash
 ./docker-start.sh health
 ```
 
-### Cloud Deployment
-
-#### Environment Variables for Production
-```bash
-JWT_SECRET=your-secure-secret
-DB_PASSWORD=your-secure-password
-NODE_ENV=production
-DB_HOST=your-database-host
-DB_PORT=5432
-DB_NAME=location_tracker
-DB_USER=tracker_user
-```
-
-#### Security Considerations
-- Use strong, randomly generated JWT secrets
-- Enable HTTPS in production
-- Use environment variables for sensitive data
-- Configure proper firewall rules
-- Enable database SSL connections
-- Regular security updates
+### Security Checklist
+- [ ] Strong JWT secrets and database passwords
+- [ ] HTTPS enabled with valid certificates
+- [ ] Environment variables for sensitive data
+- [ ] Firewall rules configured
+- [ ] Database SSL connections enabled
+- [ ] Regular security updates scheduled
 
 ## 🔍 Troubleshooting
 
@@ -309,159 +249,66 @@ DB_USER=tracker_user
 
 #### Application Won't Start
 ```bash
-# Check Docker is running
-docker info
-
-# Check for port conflicts
-lsof -i :3000
-lsof -i :3001
-lsof -i :5432
-
-# View detailed logs
-./docker-start.sh logs
-
-# Reset everything
-./docker-start.sh clean
-./docker-start.sh dev
+docker info                    # Check Docker status
+lsof -i :3000 :3001 :5432     # Check port conflicts
+./docker-start.sh logs        # View detailed logs
+./docker-start.sh clean && ./docker-start.sh dev  # Reset everything
 ```
 
 #### Database Issues
 ```bash
-# Check database status
-./docker-start.sh health
-
-# View database logs
-docker-compose logs database
-
-# Access database shell
-./docker-start.sh db
-
-# Check database connections
-\x
-SELECT * FROM pg_stat_activity;
+./docker-start.sh health       # Check database status
+docker-compose logs database   # View database logs
+./docker-start.sh db          # Access database shell
 ```
 
 #### Permission Issues
 ```bash
-# Check user roles and permissions
+# Check user permissions
 TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@demo.com","password":"password"}' | jq -r '.token')
 
-# Validate user permissions
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq
-
-# Check specific permission
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/objects
-
-# List user's roles
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/rbac/users/1
-```
-
-#### Authentication Issues
-```bash
-# Clear browser storage
-# In browser console: localStorage.clear()
-
-# Check JWT secret is set
-echo $JWT_SECRET
-
-# Verify user exists
-node database/manage.js listUsers
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/auth/validate | jq
 ```
 
 #### Test Failures
 ```bash
-# Ensure application is running
-./docker-start.sh dev
-curl http://localhost:3001/api/health
-
-# Check frontend is accessible
-curl http://localhost:3000
-
-# Reinstall test dependencies
-./docker-start.sh test-cleanup
-./docker-start.sh test-setup
-```
-
-### Performance Issues
-```bash
-# Check container resource usage
-docker stats
-
-# Monitor database connections
-./docker-start.sh db
-SELECT * FROM pg_stat_activity;
-
-# Check application health
-watch -n 5 './docker-start.sh health'
+./docker-start.sh dev         # Ensure app is running
+curl http://localhost:3001/api/health  # Check backend
+./docker-start.sh test-cleanup && ./docker-start.sh test-setup  # Reset tests
 ```
 
 ### Debug Mode
-
-Enable debug logging:
 ```bash
-# Backend debug
-DEBUG=app:* npm run dev:backend
-
-# Database query logging
-DB_DEBUG=true npm run dev:backend
+DEBUG=app:* npm run dev:backend     # Backend debug logging
+DB_DEBUG=true npm run dev:backend   # Database query logging
 ```
 
-## 📊 Monitoring and Health Checks
-
-### Application Health
+### Performance Monitoring
 ```bash
-# Check all services
-./docker-start.sh health
-
-# Individual service health
-curl http://localhost:3001/api/health  # Backend
-curl http://localhost:3000             # Frontend
+docker stats                   # Container resource usage
+./docker-start.sh db -c "SELECT * FROM pg_stat_activity;"  # Database connections
+watch -n 5 './docker-start.sh health'  # Continuous health monitoring
 ```
 
-### Database Health
-```bash
-# Connection test
-./docker-start.sh db -c "SELECT 1;"
+## 📊 System Architecture
 
-# Performance monitoring
-./docker-start.sh db -c "SELECT * FROM pg_stat_database WHERE datname = 'location_tracker';"
-```
+### Components
+- **Frontend**: React with Vite, TailwindCSS, Leaflet maps
+- **Backend**: Node.js/Express with JWT authentication, RBAC
+- **Database**: PostgreSQL with multi-tenant architecture
+- **Object Storage**: MinIO for camera images
+- **Simulator**: Docker-based location/image generator
 
-### Container Monitoring
-```bash
-# Resource usage
-docker stats
+### Key Features
+- **Multi-Tenant**: Complete workspace isolation
+- **RBAC**: Role-based access control with 32 permissions
+- **Real-Time**: WebSocket updates for live tracking
+- **Camera Images**: AI-generated realistic camera feeds
+- **Admin Panel**: System-wide workspace management
+- **Testing**: Comprehensive unit, integration, and UI tests
 
-# Container logs
-docker-compose logs -f backend
-docker-compose logs -f database
-```
+---
 
-## 🎯 Best Practices
-
-### Development Workflow
-1. Run `./docker-start.sh test-setup` once per development session
-2. Use `./docker-start.sh test-unit` for quick feedback during development
-3. Run `./docker-start.sh test-api` before committing changes
-4. Run `./docker-start.sh test` before creating pull requests
-5. Use `./docker-start.sh test-cleanup` to free up resources when done
-
-### Security Best Practices
-1. Change default credentials in production
-2. Use environment variables for sensitive data
-3. Enable HTTPS and secure headers
-4. Regular security updates
-5. Monitor access logs
-6. Use strong passwords and JWT secrets
-
-### Performance Optimization
-1. Keep the application running during development
-2. Use unit tests for rapid iteration
-3. Run full test suite only before commits/deployments
-4. Clean up regularly to free disk space
-5. Monitor database performance
-6. Use connection pooling for database
-
-This comprehensive guide should help you set up, test, and maintain the Location Tracker application effectively.
+**Need Help?** Check the troubleshooting section or review the test examples for common usage patterns.

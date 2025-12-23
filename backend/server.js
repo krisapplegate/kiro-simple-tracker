@@ -4,12 +4,14 @@ import jwt from 'jsonwebtoken'
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
 import dotenv from 'dotenv'
+import multer from 'multer'
 import { User } from './models/User.js'
 import { Tenant } from './models/Tenant.js'
 import { TrackedObject } from './models/TrackedObject.js'
 import { LocationHistory } from './models/LocationHistory.js'
 import { query } from './database.js'
 import { RBACService } from './services/RBACService.js'
+import { minioService } from './services/MinioService.js'
 import { 
   requirePermission, 
   requireObjectAccess, 
@@ -26,6 +28,22 @@ const wss = new WebSocketServer({ server })
 // Middleware
 app.use(cors())
 app.use(express.json())
+
+// Configure multer for image uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images only
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only image files are allowed'), false)
+    }
+  }
+})
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
@@ -314,6 +332,130 @@ app.post('/api/tenants', authenticateToken, async (req, res) => {
     res.status(201).json(tenant)
   } catch (error) {
     console.error('Create tenant error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Get all tenants with statistics
+app.get('/api/admin/tenants', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const tenants = await Tenant.findAll()
+    
+    // Get statistics for each tenant
+    const tenantsWithStats = await Promise.all(
+      tenants.map(async (tenant) => {
+        const stats = await Tenant.getStats(tenant.id)
+        return {
+          ...tenant,
+          stats
+        }
+      })
+    )
+    
+    res.json(tenantsWithStats)
+  } catch (error) {
+    console.error('Get all tenants error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Get all objects across all tenants
+app.get('/api/admin/objects', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT o.*, t.name as tenant_name, u.email as created_by_email
+       FROM objects o
+       LEFT JOIN tenants t ON o.tenant_id = t.id
+       LEFT JOIN users u ON o.created_by = u.id AND o.tenant_id = u.tenant_id
+       ORDER BY o.created_at DESC`
+    )
+    
+    res.json(result.rows)
+  } catch (error) {
+    console.error('Get all objects error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Get objects for specific tenant
+app.get('/api/admin/tenants/:tenantId/objects', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    const result = await query(
+      `SELECT o.*, u.email as created_by_email
+       FROM objects o
+       LEFT JOIN users u ON o.created_by = u.id AND o.tenant_id = u.tenant_id
+       WHERE o.tenant_id = $1
+       ORDER BY o.created_at DESC`,
+      [tenantId]
+    )
+    
+    res.json(result.rows)
+  } catch (error) {
+    console.error('Get tenant objects error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Delete tenant and all its data
+app.delete('/api/admin/tenants/:tenantId', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const tenantId = parseInt(req.params.tenantId)
+    
+    // Prevent deletion of tenant ID 1 (default tenant)
+    if (tenantId === 1) {
+      return res.status(400).json({ message: 'Cannot delete the default tenant' })
+    }
+    
+    // Check if tenant exists
+    const tenant = await Tenant.findById(tenantId)
+    if (!tenant) {
+      return res.status(404).json({ message: 'Tenant not found' })
+    }
+    
+    // Delete tenant (cascade will handle related data)
+    const deleted = await Tenant.delete(tenantId)
+    
+    if (deleted) {
+      res.json({ message: 'Tenant and all associated data deleted successfully' })
+    } else {
+      res.status(404).json({ message: 'Tenant not found' })
+    }
+  } catch (error) {
+    console.error('Delete tenant error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Super Admin: Delete specific object
+app.delete('/api/admin/objects/:objectId', authenticateToken, requirePermission('system.admin'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.objectId)
+    
+    // Get object details first
+    const objectResult = await query(
+      'SELECT * FROM objects WHERE id = $1',
+      [objectId]
+    )
+    
+    if (objectResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+    
+    // Delete the object (cascade will handle location_history)
+    const deleteResult = await query(
+      'DELETE FROM objects WHERE id = $1 RETURNING id',
+      [objectId]
+    )
+    
+    if (deleteResult.rowCount > 0) {
+      res.json({ message: 'Object deleted successfully' })
+    } else {
+      res.status(404).json({ message: 'Object not found' })
+    }
+  } catch (error) {
+    console.error('Delete object error:', error)
     res.status(500).json({ message: 'Server error' })
   }
 })
@@ -634,6 +776,58 @@ app.delete('/api/objects/:id', authenticateToken, requireObjectAccess('delete'),
   }
 })
 
+// Get objects with location history for path visualization
+app.get('/api/objects/with-paths', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const { timeRange, types, tags, limit = 50 } = req.query
+    
+    // Build filters
+    const filters = {}
+    if (types) {
+      filters.types = types.split(',')
+    }
+    if (tags) {
+      filters.tags = tags.split(',')
+    }
+    if (timeRange) {
+      filters.timeRange = timeRange
+    }
+
+    // Get objects
+    const objects = await TrackedObject.findByTenant(req.user.effectiveTenantId, filters)
+    
+    // Get location history for each object
+    const objectsWithPaths = await Promise.all(
+      objects.map(async (object) => {
+        const locationHistory = await query(
+          `SELECT id, lat, lng, timestamp, image_id
+           FROM location_history 
+           WHERE object_id = $1 AND tenant_id = $2
+           ORDER BY timestamp ASC
+           LIMIT $3`,
+          [object.id, req.user.effectiveTenantId, parseInt(limit)]
+        )
+        
+        return {
+          ...object,
+          locationHistory: locationHistory.rows.map(row => ({
+            id: row.id,
+            lat: parseFloat(row.lat),
+            lng: parseFloat(row.lng),
+            timestamp: row.timestamp,
+            imageId: row.image_id
+          }))
+        }
+      })
+    )
+    
+    res.json(objectsWithPaths)
+  } catch (error) {
+    console.error('Get objects with paths error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
 app.get('/api/objects/types', authenticateToken, async (req, res) => {
   try {
     const result = await query(
@@ -681,6 +875,26 @@ app.get('/api/objects/tags', authenticateToken, async (req, res) => {
   }
 })
 
+// Get image counts for all objects
+app.get('/api/objects/image-counts', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT 
+         object_id as "objectId",
+         COUNT(*) as "imageCount"
+       FROM images 
+       WHERE tenant_id = $1 AND object_id IS NOT NULL
+       GROUP BY object_id`,
+      [req.user.effectiveTenantId]
+    )
+    
+    res.json(result.rows)
+  } catch (error) {
+    console.error('Get object image counts error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
 app.get('/api/objects/:id/locations', authenticateToken, async (req, res) => {
   try {
     const objectId = parseInt(req.params.id)
@@ -688,6 +902,252 @@ app.get('/api/objects/:id/locations', authenticateToken, async (req, res) => {
     res.json(history)
   } catch (error) {
     console.error('Get locations error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Update object location
+app.put('/api/objects/:id/location', authenticateToken, requirePermission('objects.update'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    const { lat, lng } = req.body
+
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return res.status(400).json({ message: 'Invalid coordinates. Lat and lng must be numbers.' })
+    }
+
+    // Verify object exists and user has access
+    const object = await TrackedObject.findById(objectId, req.user.effectiveTenantId)
+    if (!object) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+
+    // Update object's current location
+    await query(
+      'UPDATE objects SET lat = $1, lng = $2, last_update = NOW() WHERE id = $3 AND tenant_id = $4',
+      [lat, lng, objectId, req.user.effectiveTenantId]
+    )
+
+    // Add to location history
+    await query(
+      'INSERT INTO location_history (object_id, lat, lng, timestamp, tenant_id) VALUES ($1, $2, $3, NOW(), $4)',
+      [objectId, lat, lng, req.user.effectiveTenantId]
+    )
+
+    // Broadcast location update via WebSocket
+    const locationUpdate = {
+      type: 'location_update',
+      objectId: objectId,
+      lat: lat,
+      lng: lng,
+      timestamp: new Date().toISOString(),
+      tenantId: req.user.effectiveTenantId
+    }
+
+    // Send to all clients in the same tenant
+    wss.clients.forEach(client => {
+      if (client.readyState === client.OPEN && client.tenantId === req.user.effectiveTenantId) {
+        client.send(JSON.stringify(locationUpdate))
+      }
+    })
+
+    res.json({ 
+      message: 'Location updated successfully',
+      lat: lat,
+      lng: lng,
+      timestamp: new Date().toISOString()
+    })
+  } catch (error) {
+    console.error('Update location error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Image upload endpoint
+app.post('/api/objects/:id/images', authenticateToken, requirePermission('objects.update'), upload.single('image'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' })
+    }
+
+    // Verify object exists and user has access
+    const object = await TrackedObject.findById(objectId, req.user.effectiveTenantId)
+    if (!object) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+
+    // Upload image to MinIO
+    const uploadResult = await minioService.uploadImage(
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype
+    )
+
+    if (!uploadResult.success) {
+      return res.status(500).json({ message: 'Failed to upload image', error: uploadResult.error })
+    }
+
+    // Store image metadata in database
+    const imageResult = await query(
+      `INSERT INTO images (object_id, object_name, file_name, content_type, file_size, image_url, tenant_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, object_name, file_name, image_url, created_at`,
+      [
+        objectId,
+        uploadResult.objectName,
+        uploadResult.fileName,
+        req.file.mimetype,
+        req.file.size,
+        uploadResult.imageUrl,
+        req.user.effectiveTenantId,
+        req.user.effectiveUserId
+      ]
+    )
+
+    const imageRecord = imageResult.rows[0]
+
+    // Optionally link to location history if locationHistoryId is provided
+    if (req.body.locationHistoryId) {
+      await query(
+        `UPDATE location_history SET image_id = $1 WHERE id = $2 AND tenant_id = $3`,
+        [imageRecord.id, parseInt(req.body.locationHistoryId), req.user.effectiveTenantId]
+      )
+    }
+
+    res.status(201).json({
+      id: imageRecord.id,
+      objectName: imageRecord.object_name,
+      fileName: imageRecord.file_name,
+      imageUrl: imageRecord.image_url,
+      createdAt: imageRecord.created_at
+    })
+  } catch (error) {
+    console.error('Upload image error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get images for an object
+app.get('/api/objects/:id/images', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const objectId = parseInt(req.params.id)
+    const { limit = 50, offset = 0, startTime, endTime } = req.query
+
+    // Verify object exists and user has access
+    const object = await TrackedObject.findById(objectId, req.user.effectiveTenantId)
+    if (!object) {
+      return res.status(404).json({ message: 'Object not found' })
+    }
+
+    // Build query with optional time filtering
+    let query_text = `
+      SELECT i.id, i.object_name, i.file_name, i.image_url, i.created_at,
+             i.content_type, i.file_size
+      FROM images i
+      WHERE i.object_id = $1 AND i.tenant_id = $2
+    `
+    let queryParams = [objectId, req.user.effectiveTenantId]
+    
+    // Add time filtering if provided
+    if (startTime && endTime) {
+      query_text += ` AND i.created_at BETWEEN $3 AND $4`
+      queryParams.push(startTime, endTime)
+      query_text += ` ORDER BY i.created_at DESC LIMIT $5 OFFSET $6`
+      queryParams.push(parseInt(limit), parseInt(offset))
+    } else {
+      query_text += ` ORDER BY i.created_at DESC LIMIT $3 OFFSET $4`
+      queryParams.push(parseInt(limit), parseInt(offset))
+    }
+
+    const result = await query(query_text, queryParams)
+
+    const images = result.rows.map(row => ({
+      id: row.id,
+      objectName: row.object_name,
+      fileName: row.file_name,
+      imageUrl: row.image_url,
+      createdAt: row.created_at,
+      contentType: row.content_type,
+      fileSize: row.file_size
+    }))
+
+    res.json(images)
+  } catch (error) {
+    console.error('Get images error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Get recent images across all objects
+app.get('/api/images/recent', authenticateToken, requirePermission('objects.read'), async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10
+    
+    const result = await query(
+      `SELECT i.id, i.object_name, i.file_name, i.image_url, i.created_at,
+              o.id as object_id, o.name as object_display_name, o.type as object_type,
+              o.lat, o.lng
+       FROM images i
+       LEFT JOIN objects o ON i.object_id = o.id
+       WHERE i.tenant_id = $1
+       ORDER BY i.created_at DESC
+       LIMIT $2`,
+      [req.user.effectiveTenantId, limit]
+    )
+    
+    const images = result.rows.map(row => ({
+      id: row.id,
+      objectName: row.object_display_name || row.object_name,
+      fileName: row.file_name,
+      imageUrl: row.image_url,
+      createdAt: row.created_at,
+      object: row.object_id ? {
+        id: row.object_id,
+        name: row.object_display_name,
+        type: row.object_type,
+        lat: parseFloat(row.lat),
+        lng: parseFloat(row.lng)
+      } : null
+    }))
+    
+    res.json(images)
+  } catch (error) {
+    console.error('Get recent images error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Delete an image
+app.delete('/api/images/:id', authenticateToken, requirePermission('objects.update'), async (req, res) => {
+  try {
+    const imageId = parseInt(req.params.id)
+
+    // Get image details
+    const imageResult = await query(
+      `SELECT object_name, file_name FROM images WHERE id = $1 AND tenant_id = $2`,
+      [imageId, req.user.effectiveTenantId]
+    )
+
+    if (imageResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Image not found' })
+    }
+
+    const image = imageResult.rows[0]
+
+    // Delete from MinIO
+    await minioService.deleteImage(image.object_name)
+
+    // Delete from database
+    await query(
+      `DELETE FROM images WHERE id = $1 AND tenant_id = $2`,
+      [imageId, req.user.effectiveTenantId]
+    )
+
+    res.json({ message: 'Image deleted successfully' })
+  } catch (error) {
+    console.error('Delete image error:', error)
     res.status(500).json({ message: 'Server error' })
   }
 })

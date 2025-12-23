@@ -8,9 +8,9 @@ import path from 'path'
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'node',
-    setupFiles: ['./tests/setup.js'],
-    include: ['tests/unit/**/*.test.js'],
+    environment: 'jsdom',
+    setupFiles: ['./tests/setup.js', './tests/setup-react.js'],
+    include: ['tests/unit/**/*.test.js', 'tests/unit/**/*.test.jsx'],
     exclude: ['tests/integration/**/*.test.js', 'node_modules/**'],
     coverage: {
       reporter: ['text', 'json', 'html'],
@@ -19,7 +19,8 @@ export default defineConfig({
         'tests/',
         'dist/',
         '**/*.test.js',
-        '**/*.spec.js'
+        '**/*.spec.js',
+        '**/*.test.jsx'
       ]
     },
     testTimeout: 10000,

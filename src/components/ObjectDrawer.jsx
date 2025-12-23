@@ -11,7 +11,9 @@ import {
   Trash2, 
   Navigation,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react'
 
 const ObjectDrawer = ({ object, onClose }) => {
@@ -31,6 +33,32 @@ const ObjectDrawer = ({ object, onClose }) => {
         headers: getApiHeaders()
       })
       if (!response.ok) throw new Error('Failed to fetch location history')
+      return response.json()
+    },
+    enabled: !!object?.id
+  })
+
+  // Fetch object images (filtered by location if selectedLocation is provided)
+  const { data: objectImages = [] } = useQuery({
+    queryKey: ['object-images', object?.id, object?.selectedLocation?.timestamp],
+    queryFn: async () => {
+      if (!object?.id) return []
+      
+      let url = `/api/objects/${object.id}/images`
+      
+      // If a specific location is selected, filter images by timestamp
+      if (object.selectedLocation?.timestamp) {
+        const timestamp = new Date(object.selectedLocation.timestamp)
+        const timeWindow = 5 * 60 * 1000 // 5 minutes window
+        const startTime = new Date(timestamp.getTime() - timeWindow).toISOString()
+        const endTime = new Date(timestamp.getTime() + timeWindow).toISOString()
+        url += `?startTime=${startTime}&endTime=${endTime}`
+      }
+      
+      const response = await fetch(url, {
+        headers: getApiHeaders()
+      })
+      if (!response.ok) throw new Error('Failed to fetch object images')
       return response.json()
     },
     enabled: !!object?.id
@@ -128,6 +156,16 @@ const ObjectDrawer = ({ object, onClose }) => {
           }`}
         >
           Details
+        </button>
+        <button
+          onClick={() => setActiveTab('images')}
+          className={`flex-1 py-3 px-4 text-sm font-medium ${
+            activeTab === 'images'
+              ? 'border-b-2 border-primary-500 text-primary-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Images ({objectImages.length})
         </button>
         <button
           onClick={() => setActiveTab('history')}
@@ -340,6 +378,111 @@ const ObjectDrawer = ({ object, onClose }) => {
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'images' && (
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-900 flex items-center">
+                <Camera className="h-4 w-4 mr-2" />
+                Camera Images
+                {object?.selectedLocation && (
+                  <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                    📍 From specific location
+                  </span>
+                )}
+              </h3>
+              <span className="text-xs text-gray-500">
+                {objectImages.length} image{objectImages.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            
+            {objectImages.length === 0 ? (
+              <div className="text-center py-8">
+                <ImageIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                {object?.selectedLocation ? (
+                  <>
+                    <p className="text-sm text-gray-500">No camera images from this location.</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Location timestamp: {new Date(object.selectedLocation.timestamp).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Searched within 5-minute window around this time.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-500">No camera images available for this object.</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Try clicking on "Camera Test" or "UI Test Camera" objects which have images.
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Object ID: {object?.id} | Images: {objectImages.length}
+                    </p>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {objectImages.map((image, index) => (
+                  <div key={image.id} className="bg-gray-50 rounded-lg overflow-hidden">
+                    {/* Image */}
+                    <div className="aspect-video bg-gray-200 relative">
+                      <img
+                        src={image.imageUrl}
+                        alt={`Camera image from ${image.objectName}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none'
+                          e.target.nextSibling.style.display = 'flex'
+                        }}
+                      />
+                      <div 
+                        className="absolute inset-0 bg-gray-100 flex items-center justify-center hidden"
+                        style={{ display: 'none' }}
+                      >
+                        <div className="text-center">
+                          <ImageIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                          <p className="text-xs text-gray-500">Image unavailable</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Image metadata */}
+                    <div className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-900">
+                          {image.fileName}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(image.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      
+                      {image.lat && image.lng && (
+                        <div className="flex items-center text-xs text-gray-600 mb-1">
+                          <MapPin className="h-3 w-3 mr-1" />
+                          <span>{image.lat.toFixed(6)}, {image.lng.toFixed(6)}</span>
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>
+                          {image.contentType}
+                        </span>
+                        <button
+                          onClick={() => window.open(image.imageUrl, '_blank')}
+                          className="text-primary-600 hover:text-primary-700 font-medium"
+                        >
+                          View Full Size
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

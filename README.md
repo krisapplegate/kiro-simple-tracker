@@ -1,22 +1,19 @@
 # Location Tracker
 
-A multi-tenant location tracking application with comprehensive role-based access control (RBAC) and real-time updates.
+Multi-tenant location tracking application with RBAC, real-time updates, camera image generation, and admin workspace management.
 
-## ✨ Features
+## ✨ Key Features
 
-- **Multi-Tenant Architecture**: Complete workspace isolation with automatic RBAC initialization
-- **Real-Time Location Tracking**: Live position updates with WebSocket integration
-- **Advanced RBAC System**: 6 roles, 32 granular permissions across 6 resources
-- **Interactive Map Interface**: Leaflet-based maps with enhanced tooltips and custom markers
-- **Workspace Management**: Create and switch between isolated workspaces
-- **Admin Panel**: Complete UI for managing users, roles, groups, and permissions
-- **Object Management**: Create, edit, delete tracked objects with permission-based access
-- **Location History**: Track and visualize historical movement data
-- **Responsive Design**: Works on desktop, tablet, and mobile devices
+- **🏢 Multi-Tenant Architecture**: Complete workspace isolation with automatic RBAC
+- **📍 Real-Time Tracking**: Live position updates with WebSocket integration  
+- **🔐 Advanced RBAC**: 6 roles, 32 permissions across 6 resources
+- **📸 Camera Images**: AI-generated realistic camera feeds with location/time context
+- **🗺️ Interactive Maps**: Leaflet-based interface with custom markers and tooltips
+- **👥 Admin Management**: System-wide workspace and object management for super admins
+- **🚗 Location Simulator**: Docker-based tool for realistic movement simulation
+- **📱 Responsive Design**: Works on desktop, tablet, and mobile devices
 
 ## 🚀 Quick Start
-
-### Using Docker (Recommended)
 
 ```bash
 # Clone and start
@@ -24,187 +21,191 @@ git clone <repository-url>
 cd location-tracker
 ./docker-start.sh dev
 
+# Apply database migrations (one-time)
+docker cp database/migrate_add_images.sql simple-tracker-database-1:/tmp/migrate_add_images.sql
+docker cp database/migrate_add_cascade_deletes.sql simple-tracker-database-1:/tmp/migrate_add_cascade_deletes.sql
+docker-compose exec database psql -U tracker_user -d location_tracker -f /tmp/migrate_add_images.sql
+docker-compose exec database psql -U tracker_user -d location_tracker -f /tmp/migrate_add_cascade_deletes.sql
+
 # Access application
 open http://localhost:3000
 ```
 
 **Demo Login**: `admin@demo.com` / `password` (Super Administrator)
 
-### Manual Setup
+### Key URLs
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:3001  
+- **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin)
 
-```bash
-# Install dependencies
-npm install
+## 📚 Documentation
 
-# Set up PostgreSQL database
-createdb location_tracker
-psql location_tracker < database/init.sql
+### 🎯 Getting Started
+- **[Setup Guide](docs/SETUP.md)** - Complete installation and configuration
+- **[User Guide](docs/USER_GUIDE.md)** - How to use the application
+- **[Quick Start](#-quick-start)** - Get running in 5 minutes
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your database credentials
+### 👨‍💼 Administration
+- **[Admin Guide](docs/ADMIN_GUIDE.md)** - Administrative features and management
+- **[API Reference](docs/API_REFERENCE.md)** - Complete REST API documentation
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
-# Start application
-npm run dev
+### 🛠️ Development
+- **[Development Guide](DEVELOPMENT.md)** - Development workflows and architecture
+- **[Testing Guide](SETUP_AND_TESTING.md)** - Running and writing tests
+- **[Cleanup Guide](CLEANUP_GUIDE.md)** - Data management and cleanup
+
+### 🔧 Tools & Utilities
+- **[Simulator Guide](simulator/README.md)** - Location simulation tools
+- **[Object Icons](OBJECT_TYPE_ICONS.md)** - Icon configurations and usage
+
+## 🏗️ Architecture Overview
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │    Backend      │    │   Database      │
+│   (React)       │◄──►│   (Node.js)     │◄──►│  (PostgreSQL)   │
+│   Port 3000     │    │   Port 3001     │    │   Port 5432     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         │              ┌─────────────────┐              │
+         │              │     MinIO       │              │
+         └──────────────►│  (File Storage) │◄─────────────┘
+                        │   Port 9000     │
+                        └─────────────────┘
 ```
 
 ## 🔐 RBAC System
 
-### Default Roles & Permissions
-- **Super Admin** (32 permissions): Full system access
-- **Admin** (31 permissions): Full management except system admin
-- **Manager** (16 permissions): Team and object oversight  
-- **Operator** (12 permissions): Object and type management
+### Permission Levels
+- **Super Admin** (32 permissions): Full system access + workspace management
+- **Admin** (31 permissions): Full workspace management
+- **Manager** (16 permissions): Team and object oversight
+- **Operator** (12 permissions): Object and type management  
+- **User** (6 permissions): Basic object access
 - **Viewer** (7 permissions): Read-only access
-- **User** (6 permissions): Basic object access for own objects
 
 ### Admin Panel Access
-Navigate to `/admin` or click the shield icon in the navbar (requires admin permissions).
+- **Regular Admins**: Manage users, roles, groups within workspace
+- **Super Admins**: Additional "Workspaces" tab for system-wide management
+
+## 🚗 Location Simulator
+
+Docker-based tool for realistic movement simulation:
+
+```bash
+# Quick scenarios
+./simulator/run-simulator.sh nyc        # NYC Taxi 🚕
+./simulator/run-simulator.sh sf         # SF Delivery Truck 🚚
+./simulator/run-simulator.sh drone      # Security Drone 🚁
+./simulator/run-simulator.sh multi      # All simulators
+
+# Custom configuration
+docker run --rm location-simulator \
+  --name "Custom Vehicle" --objectType "truck" \
+  --pattern street --centerLat 37.7749 --centerLng -122.4194 \
+  --images --imageInterval 3 --verbose
+```
+
+**Patterns**: random, circle, square, street | **Features**: Multi-tenant, real-time updates, camera images
 
 ## 🧪 Testing
 
 ```bash
-# Setup test environment (one-time)
-./docker-start.sh test-setup
+# Complete test suite
+./docker-start.sh test-setup  # One-time setup
+./docker-start.sh test        # All tests (118+ tests)
 
-# Run all tests
-./docker-start.sh test
-
-# Run specific test suites
-./docker-start.sh test-unit    # Unit tests
-./docker-start.sh test-api     # API integration tests
-./docker-start.sh test-ui      # UI tests with Playwright
-./docker-start.sh test-rbac    # RBAC-specific tests
+# Individual suites  
+./docker-start.sh test-unit      # Unit tests (70)
+./docker-start.sh test-api       # API integration (50+)
+./docker-start.sh test-ui        # UI tests (30+)
 ```
 
 ## 🐳 Docker Commands
 
 ```bash
-./docker-start.sh dev      # Start development
-./docker-start.sh prod     # Start production  
-./docker-start.sh stop     # Stop all containers
-./docker-start.sh logs     # View logs
+./docker-start.sh dev      # Development mode
+./docker-start.sh prod     # Production mode
+./docker-start.sh test     # Run tests
 ./docker-start.sh health   # Check health
+./docker-start.sh logs     # View logs
 ./docker-start.sh db       # Database shell
 ./docker-start.sh backup   # Backup database
-./docker-start.sh clean    # Clean everything (⚠️ removes data)
+./docker-start.sh clean    # Clean everything
 ```
 
-## 🗄️ Database Management
+## 🧹 Data Management
+
+Clean tracking data while preserving users, tenants, and configurations:
 
 ```bash
-# Statistics and user management
-node database/manage.js stats
-node database/manage.js listUsers
-node database/manage.js createUser user@example.com password123 user 1
+# Preview what would be deleted (safe)
+./scripts/cleanup-all-data.sh --dry-run
 
-# Object and tenant management
-node database/manage.js listObjects
-node database/manage.js createTenant "Company Name"
+# Interactive cleanup with confirmation
+./scripts/cleanup-all-data.sh
+
+# Force cleanup without confirmation  
+./scripts/cleanup-all-data.sh --force
 ```
+
+**What gets cleaned**: Objects, location history, image records and files  
+**What's preserved**: Users, tenants, object type configurations  
+
+See [Cleanup Guide](CLEANUP_GUIDE.md) for detailed documentation.
 
 ## 🌐 Key API Endpoints
 
 ### Authentication
 - `POST /api/auth/login` - User login
-- `GET /api/auth/validate` - Validate JWT token
+- `GET /api/auth/validate` - Validate JWT + permissions
 
-### Objects
-- `GET /api/objects` - List objects (requires `objects.read`)
-- `POST /api/objects` - Create object (requires `objects.create`)
-- `DELETE /api/objects/:id` - Delete object (requires `objects.delete` + ownership)
+### Objects  
+- `GET /api/objects` - List objects (tenant-scoped)
+- `POST /api/objects` - Create object
+- `PUT /api/objects/:id/location` - Update location
+- `POST /api/objects/:id/images` - Upload camera image
 
-### RBAC Management
-- `GET /api/rbac/roles` - List roles (requires `roles.read`)
-- `POST /api/rbac/roles` - Create role (requires `roles.create`)
-- `GET /api/rbac/users/:id` - Get user RBAC info (requires `users.manage`)
+### Admin (Super Admin Only)
+- `GET /api/admin/tenants` - All workspaces with stats
+- `GET /api/admin/objects` - All objects across workspaces  
+- `DELETE /api/admin/tenants/:id` - Delete workspace (cascades)
 
-### Workspace Management
-- `GET /api/tenants` - Get user's workspaces
-- `POST /api/tenants` - Create new workspace
-
-## 📁 Project Structure
-
-```
-├── src/                    # React frontend
-│   ├── components/         # React components
-│   ├── contexts/          # React contexts (Auth, Tenant)
-│   ├── pages/             # Page components
-│   └── hooks/             # Custom React hooks
-├── backend/               # Node.js API
-│   ├── server.js         # Express server with API routes
-│   ├── models/           # Database models
-│   ├── services/         # Business logic services
-│   └── middleware/       # Express middleware
-├── database/             # Database setup and management
-│   ├── init.sql         # Database schema
-│   └── manage.js        # Database management CLI
-├── tests/                # Test suites
-│   ├── unit/            # Unit tests
-│   └── integration/     # Integration tests
-└── docker-compose.yml    # Docker configuration
-```
-
-## 🔧 Environment Variables
-
-```bash
-# Backend
-JWT_SECRET=your-secret-key
-NODE_ENV=development
-PORT=3001
-
-# Database  
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=location_tracker
-DB_USER=tracker_user
-DB_PASSWORD=tracker_password
-```
+See [API Reference](docs/API_REFERENCE.md) for complete documentation.
 
 ## 🚀 Production Deployment
 
 ```bash
-# Set up environment variables
-echo "JWT_SECRET=$(openssl rand -base64 32)" > .env
-echo "DB_PASSWORD=$(openssl rand -base64 16)" >> .env
+# Generate secure environment
+cat > .env << EOF
+JWT_SECRET=$(openssl rand -base64 32)
+DB_PASSWORD=$(openssl rand -base64 16)
+NODE_ENV=production
+EOF
 
-# Deploy with Docker Compose
+# Deploy
 ./docker-start.sh prod
+./docker-start.sh health
 ```
 
-## 📱 Usage Guide
+## 📊 System Stats
 
-1. **Login** with demo credentials or create new users
-2. **Create Workspaces** via tenant selector or API
-3. **Click Map** to create objects at specific locations
-4. **Use Sidebar** to filter objects by type, tags, or time range
-5. **Click Objects** to see enhanced tooltips with actions
-6. **Access Admin Panel** via shield icon (requires admin permissions)
-7. **Manage RBAC** through the admin interface at `/admin`
+- **Frontend**: React 18, Vite, TailwindCSS, Leaflet
+- **Backend**: Node.js, Express, PostgreSQL, WebSocket
+- **Storage**: MinIO for camera images
+- **Testing**: 118+ tests (unit, integration, UI)
+- **RBAC**: 6 roles, 32 permissions, complete tenant isolation
+- **Features**: Real-time updates, camera generation, admin management
 
-## 🔍 Troubleshooting
+## 🔍 Need Help?
 
-| Issue | Solution |
-|-------|----------|
-| Port in use | `./docker-start.sh stop` |
-| Database error | `./docker-start.sh health` |
-| Can't create objects | Check `objects.create` permission |
-| Authentication failed | Clear localStorage and re-login |
-| Permission errors | Verify user roles with `/api/rbac/users/:id` |
+- **[Setup Issues](docs/SETUP.md)** - Installation and configuration
+- **[Usage Questions](docs/USER_GUIDE.md)** - How to use features
+- **[Admin Tasks](docs/ADMIN_GUIDE.md)** - Administrative functions
+- **[API Integration](docs/API_REFERENCE.md)** - Technical documentation
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common problems and solutions
 
-## 📞 Support
+---
 
-1. Check logs: `./docker-start.sh logs`
-2. Check health: `./docker-start.sh health`  
-3. Reset app: `./docker-start.sh clean && ./docker-start.sh dev`
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Run tests: `./docker-start.sh test`
-4. Submit a pull request
-
-## 📄 License
-
-MIT License - see LICENSE file for details.
+**Complete Documentation**: See [docs/README.md](docs/README.md) for the full documentation index.

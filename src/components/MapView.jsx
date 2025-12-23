@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline, CircleMarker } from 'react-leaflet'
 import L from 'leaflet'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Locate, Edit, Trash2, X } from 'lucide-react'
+import { Plus, Locate, Edit, Trash2, X, Camera } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
 
@@ -59,7 +59,109 @@ const MapClickHandler = ({ onMapClick }) => {
   return null
 }
 
-const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
+// Component to render object path and location markers
+const ObjectPath = ({ object, onLocationSelect, getObjectIcon }) => {
+  if (!object.locationHistory || object.locationHistory.length === 0) {
+    // If no location history, just show the current position
+    return (
+      <Marker
+        key={`current-${object.id}`}
+        position={[object.lat, object.lng]}
+        icon={getObjectIcon(object.type)}
+        eventHandlers={{
+          click: () => onLocationSelect(object, null)
+        }}
+      >
+        <Popup>
+          <div className="p-3 min-w-[200px]">
+            <h3 className="font-semibold text-gray-900">{object.name}</h3>
+            <p className="text-sm text-gray-600 capitalize">
+              <strong>Type:</strong> {object.type}
+            </p>
+            <p className="text-xs text-gray-500">
+              <strong>Current Position</strong>
+            </p>
+          </div>
+        </Popup>
+      </Marker>
+    )
+  }
+
+  const pathCoordinates = object.locationHistory.map(loc => [loc.lat, loc.lng])
+  const mostRecentLocation = object.locationHistory[object.locationHistory.length - 1]
+
+  return (
+    <>
+      {/* Draw path line */}
+      {pathCoordinates.length > 1 && (
+        <Polyline
+          positions={pathCoordinates}
+          color="#3b82f6"
+          weight={3}
+          opacity={0.7}
+        />
+      )}
+      
+      {/* Draw dots for historical positions */}
+      {object.locationHistory.slice(0, -1).map((location, index) => (
+        <CircleMarker
+          key={`history-${object.id}-${location.id}`}
+          center={[location.lat, location.lng]}
+          radius={4}
+          fillColor="#3b82f6"
+          color="#ffffff"
+          weight={2}
+          fillOpacity={0.8}
+          eventHandlers={{
+            click: () => onLocationSelect(object, location)
+          }}
+        >
+          <Popup>
+            <div className="p-3 min-w-[200px]">
+              <h3 className="font-semibold text-gray-900">{object.name}</h3>
+              <p className="text-sm text-gray-600 capitalize">
+                <strong>Type:</strong> {object.type}
+              </p>
+              <p className="text-xs text-gray-500">
+                <strong>Historical Position:</strong> {new Date(location.timestamp).toLocaleString()}
+              </p>
+              {location.imageId && (
+                <p className="text-xs text-blue-600">📷 Has camera image</p>
+              )}
+            </div>
+          </Popup>
+        </CircleMarker>
+      ))}
+      
+      {/* Draw icon for most recent position */}
+      <Marker
+        key={`current-${object.id}`}
+        position={[mostRecentLocation.lat, mostRecentLocation.lng]}
+        icon={getObjectIcon(object.type)}
+        eventHandlers={{
+          click: () => onLocationSelect(object, mostRecentLocation)
+        }}
+      >
+        <Popup>
+          <div className="p-3 min-w-[200px]">
+            <h3 className="font-semibold text-gray-900">{object.name}</h3>
+            <p className="text-sm text-gray-600 capitalize">
+              <strong>Type:</strong> {object.type}
+            </p>
+            <p className="text-xs text-gray-500">
+              <strong>Latest Position:</strong> {new Date(mostRecentLocation.timestamp).toLocaleString()}
+            </p>
+            {mostRecentLocation.imageId && (
+              <p className="text-xs text-blue-600">📷 Has camera image</p>
+            )}
+          </div>
+        </Popup>
+      </Marker>
+    </>
+  )
+}
+
+const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject, zoomToObject }) => {
   const [userLocation, setUserLocation] = useState(null)
   const [map, setMap] = useState(null)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -144,20 +246,51 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
     }
   }
 
-  // Fetch tracked objects
+  const handleLocationSelect = (object, location) => {
+    // Create a combined object with location-specific data for the drawer
+    const locationObject = {
+      ...object,
+      selectedLocation: location,
+      // If it's a historical location, use its coordinates
+      displayLat: location ? location.lat : object.lat,
+      displayLng: location ? location.lng : object.lng,
+      displayTimestamp: location ? location.timestamp : object.lastUpdate
+    }
+    onObjectSelect(locationObject)
+  }
+
+  // Fetch tracked objects with location history
   const { data: objects = [], isLoading } = useQuery({
-    queryKey: ['objects', tenantId, filters],
+    queryKey: ['objects-with-paths', tenantId, filters],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (filters.timeRange) params.append('timeRange', filters.timeRange)
       if (filters.objectTypes.length) params.append('types', filters.objectTypes.join(','))
       if (filters.tags.length) params.append('tags', filters.tags.join(','))
       
-      const response = await fetch(`/api/objects?${params}`, {
+      const response = await fetch(`/api/objects/with-paths?${params}`, {
         headers: getApiHeaders()
       })
       if (!response.ok) throw new Error('Failed to fetch objects')
       return response.json()
+    },
+    enabled: !!tenantId
+  })
+
+  // Fetch image counts for objects
+  const { data: imageCounts = {} } = useQuery({
+    queryKey: ['object-image-counts', tenantId],
+    queryFn: async () => {
+      const response = await fetch('/api/objects/image-counts', {
+        headers: getApiHeaders()
+      })
+      if (!response.ok) return {}
+      const counts = await response.json()
+      // Convert array to object for easy lookup
+      return counts.reduce((acc, item) => {
+        acc[item.objectId] = parseInt(item.imageCount)
+        return acc
+      }, {})
     },
     enabled: !!tenantId
   })
@@ -184,6 +317,17 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
     getCurrentLocation()
   }, [])
 
+  // Effect to zoom to object when zoomToObject prop changes
+  useEffect(() => {
+    if (zoomToObject && map && zoomToObject.lat && zoomToObject.lng) {
+      // Zoom to the object with animation
+      map.setView([zoomToObject.lat, zoomToObject.lng], 17, {
+        animate: true,
+        duration: 1.5
+      })
+    }
+  }, [zoomToObject, map])
+
   const defaultCenter = [37.7749, -122.4194] // San Francisco as default
 
   return (
@@ -201,93 +345,14 @@ const MapView = ({ filters, onMapClick, onObjectSelect, selectedObject }) => {
         
         <MapClickHandler onMapClick={onMapClick} />
         
-        {/* Render tracked objects */}
+        {/* Render tracked objects with paths */}
         {objects.map((object) => (
-          <Marker
+          <ObjectPath
             key={object.id}
-            position={[object.lat, object.lng]}
-            icon={getObjectIcon(object.type)}
-            eventHandlers={{
-              click: () => onObjectSelect(object)
-            }}
-          >
-            <Popup>
-              <div className="p-3 min-w-[200px]">
-                {/* Header with name and status */}
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-gray-900">{object.name}</h3>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(object.status)}`}>
-                    {object.status || 'active'}
-                  </span>
-                </div>
-                
-                {/* Object details */}
-                <div className="space-y-1 mb-3">
-                  <p className="text-sm text-gray-600 capitalize">
-                    <strong>Type:</strong> {object.type}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    <strong>Last updated:</strong> {new Date(object.lastUpdate).toLocaleString()}
-                  </p>
-                  {object.description && (
-                    <p className="text-xs text-gray-600">
-                      <strong>Description:</strong> {object.description}
-                    </p>
-                  )}
-                  {object.tags && object.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {object.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-700"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Action buttons */}
-                <div className="flex space-x-2 pt-2 border-t border-gray-200">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onObjectSelect(object)
-                    }}
-                    className="flex-1 flex items-center justify-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
-                  >
-                    View Details
-                  </button>
-                  
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleEdit(object)
-                    }}
-                    className="flex items-center justify-center px-2 py-1 text-xs font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100"
-                  >
-                    <Edit className="h-3 w-3 mr-1" />
-                    Edit
-                  </button>
-                  
-                  {canDelete(object) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(object)
-                      }}
-                      disabled={deleteObjectMutation.isPending}
-                      className="flex items-center justify-center px-2 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 disabled:opacity-50"
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" />
-                      {deleteObjectMutation.isPending ? 'Deleting...' : 'Delete'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </Popup>
-          </Marker>
+            object={object}
+            onLocationSelect={handleLocationSelect}
+            getObjectIcon={getObjectIcon}
+          />
         ))}
         
         {/* User location marker */}

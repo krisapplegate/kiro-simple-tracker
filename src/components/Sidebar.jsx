@@ -9,16 +9,19 @@ import {
   Clock,
   X,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react'
 
-const Sidebar = ({ open, filters, setFilters }) => {
+const Sidebar = ({ open, filters, setFilters, onObjectSelect }) => {
   const { tenantId, getApiHeaders } = useTenant()
   const [expandedSections, setExpandedSections] = useState({
     timeRange: true,
     objectTypes: true,
     tags: false,
-    proximity: false
+    proximity: false,
+    recentImages: true
   })
 
   const toggleSection = (section) => {
@@ -74,6 +77,19 @@ const Sidebar = ({ open, filters, setFilters }) => {
     queryKey: ['object-tags', tenantId],
     queryFn: async () => {
       const response = await fetch('/api/objects/tags', {
+        headers: getApiHeaders()
+      })
+      if (!response.ok) return []
+      return response.json()
+    },
+    enabled: !!tenantId
+  })
+
+  // Fetch recent images
+  const { data: recentImages = [] } = useQuery({
+    queryKey: ['recent-images', tenantId],
+    queryFn: async () => {
+      const response = await fetch('/api/images/recent?limit=5', {
         headers: getApiHeaders()
       })
       if (!response.ok) return []
@@ -263,7 +279,7 @@ const Sidebar = ({ open, filters, setFilters }) => {
         </div>
 
         {/* Proximity Filter */}
-        <div className="p-4">
+        <div className="p-4 border-b border-gray-100">
           <button
             onClick={() => toggleSection('proximity')}
             className="flex items-center justify-between w-full text-left"
@@ -295,6 +311,74 @@ const Sidebar = ({ open, filters, setFilters }) => {
                 <span>{filters.proximityRange}m</span>
                 <span>10km</span>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Recent Images */}
+        <div className="p-4">
+          <button
+            onClick={() => toggleSection('recentImages')}
+            className="flex items-center justify-between w-full text-left"
+          >
+            <div className="flex items-center">
+              <Camera className="h-4 w-4 mr-2 text-gray-500" />
+              <span className="font-medium text-gray-900">Recent Images</span>
+            </div>
+            {expandedSections.recentImages ? (
+              <ChevronDown className="h-4 w-4 text-gray-500" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-gray-500" />
+            )}
+          </button>
+          
+          {expandedSections.recentImages && (
+            <div className="mt-3">
+              {recentImages.length === 0 ? (
+                <div className="text-center py-4">
+                  <ImageIcon className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-xs text-gray-500">No recent images</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentImages.map((image) => (
+                    <div key={image.id} className="bg-gray-50 rounded-lg p-2">
+                      <div className="aspect-video bg-gray-200 rounded mb-2 overflow-hidden">
+                        <img
+                          src={image.imageUrl}
+                          alt={`Camera image from ${image.objectName}`}
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => {
+                            if (image.object && onObjectSelect) {
+                              onObjectSelect(image.object)
+                            }
+                          }}
+                          onError={(e) => {
+                            e.target.style.display = 'none'
+                            e.target.nextSibling.style.display = 'flex'
+                          }}
+                        />
+                        <div 
+                          className="w-full h-full bg-gray-100 flex items-center justify-center hidden"
+                          style={{ display: 'none' }}
+                        >
+                          <ImageIcon className="h-4 w-4 text-gray-400" />
+                        </div>
+                      </div>
+                      <div className="text-xs">
+                        <p className="font-medium text-gray-900 truncate">{image.objectName}</p>
+                        <p className="text-gray-500">{new Date(image.createdAt).toLocaleString()}</p>
+                        {image.object && (
+                          <p className="text-blue-600 cursor-pointer hover:text-blue-700 text-xs" 
+                             onClick={() => onObjectSelect && onObjectSelect(image.object)}>
+                            📍 Click to zoom to object
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
