@@ -131,7 +131,10 @@ export class ObjectController {
       })
     } catch (error) {
       console.error('Error updating object location:', error)
-      if (error.message.includes('Invalid') || error.message === 'Object not found') {
+      if (error.message === 'Object not found') {
+        return res.status(404).json({ message: error.message })
+      }
+      if (error.message.includes('Invalid')) {
         return res.status(400).json({ message: error.message })
       }
       res.status(500).json({ message: 'Server error' })
