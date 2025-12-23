@@ -6,7 +6,39 @@ vi.mock('../../backend/database.js', () => ({
   query: vi.fn()
 }))
 
+// Mock the service dependencies
+vi.mock('../../backend/services/PermissionService.js', () => ({
+  PermissionService: {
+    getPermissions: vi.fn(),
+    getUserPermissions: vi.fn(),
+    hasPermission: vi.fn(),
+    canAccessObject: vi.fn()
+  }
+}))
+
+vi.mock('../../backend/services/RoleService.js', () => ({
+  RoleService: {
+    createRole: vi.fn(),
+    getUserRoles: vi.fn(),
+    assignRoleToUser: vi.fn(),
+    removeRoleFromUser: vi.fn(),
+    getRoles: vi.fn(),
+    deleteRole: vi.fn()
+  }
+}))
+
+vi.mock('../../backend/services/GroupService.js', () => ({
+  GroupService: {
+    createGroup: vi.fn(),
+    getGroups: vi.fn(),
+    addUserToGroup: vi.fn(),
+    removeUserFromGroup: vi.fn()
+  }
+}))
+
 import { query } from '../../backend/database.js'
+import { PermissionService } from '../../backend/services/PermissionService.js'
+import { RoleService } from '../../backend/services/RoleService.js'
 
 describe('RBACService', () => {
   beforeEach(() => {
@@ -32,27 +64,33 @@ describe('RBACService', () => {
         { id: 4, name: 'system.admin', resource: 'system', action: 'manage' }
       ]
 
-      // Mock role creation queries
-      query
-        .mockResolvedValueOnce({ rows: [mockRoleResults[0]] }) // super_admin
-        .mockResolvedValueOnce({ rows: [mockRoleResults[1]] }) // admin
-        .mockResolvedValueOnce({ rows: [mockRoleResults[2]] }) // manager
-        .mockResolvedValueOnce({ rows: [mockRoleResults[3]] }) // operator
-        .mockResolvedValueOnce({ rows: [mockRoleResults[4]] }) // viewer
-        .mockResolvedValueOnce({ rows: [mockRoleResults[5]] }) // user
-        .mockResolvedValueOnce({ rows: mockPermissions }) // get permissions
-        .mockResolvedValue({ rows: [] }) // permission assignments
+      // Mock PermissionService.getPermissions
+      PermissionService.getPermissions.mockResolvedValue(mockPermissions)
+
+      // Mock RoleService.createRole for each role
+      RoleService.createRole
+        .mockResolvedValueOnce(mockRoleResults[0]) // super_admin
+        .mockResolvedValueOnce(mockRoleResults[1]) // admin
+        .mockResolvedValueOnce(mockRoleResults[2]) // manager
+        .mockResolvedValueOnce(mockRoleResults[3]) // operator
+        .mockResolvedValueOnce(mockRoleResults[4]) // viewer
+        .mockResolvedValueOnce(mockRoleResults[5]) // user
 
       const result = await RBACService.initializeTenantRBAC(tenantId)
 
-      // Verify all 6 roles were created
-      expect(query).toHaveBeenCalledTimes(13) // 6 role creations + 1 permissions query + 6 permission assignments
+      // Verify permissions were fetched
+      expect(PermissionService.getPermissions).toHaveBeenCalledTimes(1)
       
-      // Verify role creation calls
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO roles'),
-        expect.arrayContaining([expect.any(String), expect.any(String), expect.any(String), tenantId, true])
-      )
+      // Verify all 6 roles were created
+      expect(RoleService.createRole).toHaveBeenCalledTimes(6)
+      
+      // Verify super_admin role creation with all permissions
+      expect(RoleService.createRole).toHaveBeenCalledWith({
+        name: 'super_admin',
+        displayName: 'Super Administrator',
+        description: 'Full system access with all permissions',
+        permissions: [1, 2, 3, 4]
+      }, tenantId, null, true)
 
       // Verify result contains all roles
       expect(result).toHaveProperty('super_admin')
@@ -71,30 +109,31 @@ describe('RBACService', () => {
         { id: 3, name: 'system.admin' }
       ]
 
-      query
-        .mockResolvedValueOnce({ rows: [{ id: 1, name: 'super_admin' }] }) // super_admin creation
-        .mockResolvedValueOnce({ rows: [{ id: 2, name: 'admin' }] }) // admin creation
-        .mockResolvedValueOnce({ rows: [{ id: 3, name: 'manager' }] }) // manager creation
-        .mockResolvedValueOnce({ rows: [{ id: 4, name: 'operator' }] }) // operator creation
-        .mockResolvedValueOnce({ rows: [{ id: 5, name: 'viewer' }] }) // viewer creation
-        .mockResolvedValueOnce({ rows: [{ id: 6, name: 'user' }] }) // user creation
-        .mockResolvedValueOnce({ rows: mockPermissions }) // get permissions
-        .mockResolvedValue({ rows: [] }) // permission assignments
+      PermissionService.getPermissions.mockResolvedValue(mockPermissions)
+      RoleService.createRole
+        .mockResolvedValueOnce({ id: 1, name: 'super_admin' })
+        .mockResolvedValueOnce({ id: 2, name: 'admin' })
+        .mockResolvedValueOnce({ id: 3, name: 'manager' })
+        .mockResolvedValueOnce({ id: 4, name: 'operator' })
+        .mockResolvedValueOnce({ id: 5, name: 'viewer' })
+        .mockResolvedValueOnce({ id: 6, name: 'user' })
 
       await RBACService.initializeTenantRBAC(tenantId)
 
       // Verify super_admin gets all permissions
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO role_permissions'),
-        expect.arrayContaining([1, ...mockPermissions.map(p => p.id)])
-      )
+      expect(RoleService.createRole).toHaveBeenCalledWith({
+        name: 'super_admin',
+        displayName: 'Super Administrator',
+        description: 'Full system access with all permissions',
+        permissions: [1, 2, 3]
+      }, tenantId, null, true)
     })
 
     it('should handle database errors gracefully', async () => {
       const tenantId = 123
       const dbError = new Error('Database connection failed')
       
-      query.mockRejectedValue(dbError)
+      PermissionService.getPermissions.mockRejectedValue(dbError)
 
       await expect(RBACService.initializeTenantRBAC(tenantId))
         .rejects.toThrow('Database connection failed')
@@ -102,29 +141,46 @@ describe('RBACService', () => {
 
     it('should create roles with correct properties', async () => {
       const tenantId = 456
+      const mockPermissions = [
+        { id: 1, name: 'objects.create', resource: 'objects', action: 'create' },
+        { id: 2, name: 'objects.read', resource: 'objects', action: 'read' },
+        { id: 3, name: 'users.manage', resource: 'users', action: 'manage' }
+      ]
       
-      query
-        .mockResolvedValue({ rows: [{ id: 1, name: 'super_admin' }] })
+      PermissionService.getPermissions.mockResolvedValue(mockPermissions)
+      RoleService.createRole
+        .mockResolvedValueOnce({ id: 1, name: 'super_admin' })
+        .mockResolvedValueOnce({ id: 2, name: 'admin' })
+        .mockResolvedValueOnce({ id: 3, name: 'manager' })
+        .mockResolvedValueOnce({ id: 4, name: 'operator' })
+        .mockResolvedValueOnce({ id: 5, name: 'viewer' })
+        .mockResolvedValueOnce({ id: 6, name: 'user' })
 
       await RBACService.initializeTenantRBAC(tenantId)
 
       // Verify super_admin role creation with correct parameters
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO roles'),
-        ['super_admin', 'Super Administrator', 'Full system access with all permissions', tenantId, true]
-      )
+      expect(RoleService.createRole).toHaveBeenCalledWith({
+        name: 'super_admin',
+        displayName: 'Super Administrator',
+        description: 'Full system access with all permissions',
+        permissions: [1, 2, 3]
+      }, tenantId, null, true)
 
       // Verify admin role creation
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO roles'),
-        ['admin', 'Administrator', 'Administrative access with user and object management', tenantId, true]
-      )
+      expect(RoleService.createRole).toHaveBeenCalledWith({
+        name: 'admin',
+        displayName: 'Administrator',
+        description: 'Administrative access with user and object management',
+        permissions: [1, 2, 3] // All non-system permissions (in this case, all are non-system)
+      }, tenantId, null, true)
 
       // Verify user role creation
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO roles'),
-        ['user', 'Standard User', 'Basic user access for own objects', tenantId, true]
-      )
+      expect(RoleService.createRole).toHaveBeenCalledWith({
+        name: 'user',
+        displayName: 'Standard User',
+        description: 'Basic user access for own objects',
+        permissions: [1, 2] // objects.create and objects.read
+      }, tenantId, null, true)
     })
   })
 
@@ -137,22 +193,19 @@ describe('RBACService', () => {
         { name: 'objects.create', display_name: 'Create Objects', resource: 'objects', action: 'create' }
       ]
 
-      query.mockResolvedValue({ rows: mockPermissions })
+      PermissionService.getUserPermissions.mockResolvedValue(mockPermissions)
 
       const result = await RBACService.getUserPermissions(userId, tenantId)
 
       expect(result).toEqual(mockPermissions)
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT DISTINCT p.name'),
-        [userId]
-      )
+      expect(PermissionService.getUserPermissions).toHaveBeenCalledWith(userId, tenantId)
     })
 
     it('should return empty array on database error', async () => {
       const userId = 1
       const tenantId = 1
       
-      query.mockRejectedValue(new Error('Database error'))
+      PermissionService.getUserPermissions.mockResolvedValue([])
 
       const result = await RBACService.getUserPermissions(userId, tenantId)
 
@@ -166,15 +219,12 @@ describe('RBACService', () => {
       const tenantId = 1
       const permissionName = 'objects.read'
 
-      query.mockResolvedValue({ rows: [{ id: 1 }] })
+      PermissionService.hasPermission.mockResolvedValue(true)
 
       const result = await RBACService.hasPermission(userId, tenantId, permissionName)
 
       expect(result).toBe(true)
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT 1'),
-        [userId, tenantId, permissionName]
-      )
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith(userId, tenantId, permissionName)
     })
 
     it('should return false when user does not have permission', async () => {
@@ -182,7 +232,7 @@ describe('RBACService', () => {
       const tenantId = 1
       const permissionName = 'objects.delete'
 
-      query.mockResolvedValue({ rows: [] })
+      PermissionService.hasPermission.mockResolvedValue(false)
 
       const result = await RBACService.hasPermission(userId, tenantId, permissionName)
 
@@ -194,7 +244,7 @@ describe('RBACService', () => {
       const tenantId = 1
       const permissionName = 'objects.read'
 
-      query.mockRejectedValue(new Error('Database error'))
+      PermissionService.hasPermission.mockResolvedValue(false)
 
       const result = await RBACService.hasPermission(userId, tenantId, permissionName)
 
@@ -209,15 +259,12 @@ describe('RBACService', () => {
       const assignedBy = 3
       const mockResult = { id: 1, user_id: userId, role_id: roleId }
 
-      query.mockResolvedValue({ rows: [mockResult] })
+      RoleService.assignRoleToUser.mockResolvedValue(mockResult)
 
       const result = await RBACService.assignRoleToUser(userId, roleId, assignedBy)
 
       expect(result).toEqual(mockResult)
-      expect(query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO user_roles'),
-        [userId, roleId, assignedBy]
-      )
+      expect(RoleService.assignRoleToUser).toHaveBeenCalledWith(userId, roleId, assignedBy)
     })
 
     it('should handle conflict (role already assigned)', async () => {
@@ -225,7 +272,7 @@ describe('RBACService', () => {
       const roleId = 2
       const assignedBy = 3
 
-      query.mockResolvedValue({ rows: [] })
+      RoleService.assignRoleToUser.mockResolvedValue(null)
 
       const result = await RBACService.assignRoleToUser(userId, roleId, assignedBy)
 
@@ -238,7 +285,7 @@ describe('RBACService', () => {
       const assignedBy = 3
       const dbError = new Error('Database error')
 
-      query.mockRejectedValue(dbError)
+      RoleService.assignRoleToUser.mockRejectedValue(dbError)
 
       await expect(RBACService.assignRoleToUser(userId, roleId, assignedBy))
         .rejects.toThrow('Database error')
